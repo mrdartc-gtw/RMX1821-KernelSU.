@@ -87,6 +87,8 @@ jobs:
       - name: Configure kernel
         working-directory: kernel
         run: |
+          set -euxo pipefail
+
           export ARCH=arm64
           export KBUILD_OUTPUT="$PWD/out"
 
@@ -113,8 +115,7 @@ jobs:
           ls -lh out/.config
 
           echo "===== KernelSU/KPROBE status ====="
-          grep -E '^CONFIG_(KSU|KPROBES|HAVE_KPROBES|KPROBE_EVENTS)=' \
-            out/.config || true
+          grep -E '^CONFIG_(KSU|KPROBES|HAVE_KPROBES|KPROBE_EVENTS)=' out/.config || true
 
           echo "===== Source tree ====="
           if [ -f .config ]; then
@@ -123,7 +124,7 @@ jobs:
           fi
 
           echo "Source .config: OK"
-
+ 
       - name: Build kernel
         working-directory: kernel
         run: |
