@@ -73,10 +73,14 @@ jobs:
             "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" \
             | bash -s v0.9.5
 
-      - name: Configure kernel
+            - name: Configure kernel
         working-directory: kernel
         run: |
           export ARCH=arm64
+          export KCONFIG_CONFIG="$PWD/out/.config"
+
+          rm -f .config
+          rm -rf include/config
 
           make RMX1821_defconfig
 
@@ -87,13 +91,20 @@ jobs:
 
           make olddefconfig
 
-          echo "===== KernelSU configuration ====="
-          grep -E 'CONFIG_(KSU|KPROBE)' .config || true
+          echo "===== Config location ====="
+          ls -lh out/.config
 
-      - name: Build kernel
+          echo "===== KernelSU configuration ====="
+          grep -E 'CONFIG_(KSU|KPROBE)' out/.config || true
+
+          echo "===== Source tree check ====="
+          test ! -f .config
+          test ! -d include/config
+            - name: Build kernel
         working-directory: kernel
         run: |
           export ARCH=arm64
+          export KCONFIG_CONFIG="$PWD/out/.config"
           export PATH="$PWD/toolchain/clang/bin:$PATH"
 
           make -j$(nproc) \
