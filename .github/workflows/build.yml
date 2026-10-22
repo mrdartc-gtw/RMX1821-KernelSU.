@@ -7,31 +7,47 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
-    steps:
-      - name: Checkout workflow repository
-        uses: actions/checkout@v4
+    container:
+      image: ubuntu:20.04
 
+    steps:
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          export DEBIAN_FRONTEND=noninteractive
+
+          apt-get update
+          apt-get install -y \
             bc \
             bison \
             build-essential \
+            ca-certificates \
             ccache \
+            clang \
             curl \
             flex \
             git \
-            libssl-dev \
             libelf-dev \
-            python3 \
+            libssl-dev \
+            python2 \
+            wget \
             zip
+
+          ln -sf /usr/bin/python2 /usr/local/bin/python
+
+          python2 --version
+          python --version
+
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
 
       - name: Clone kernel source
         run: |
-          git clone --depth=1 \
+          git clone --depth=1 --branch Q \
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
+
+          test -f kernel/tools/dct/DrvGen.py
+          chmod +x kernel/tools/dct/DrvGen.py
 
       - name: Download Android toolchains
         working-directory: kernel
@@ -72,14 +88,13 @@ jobs:
 
           make olddefconfig
 
-          echo "===== KernelSU configuration ====="
+          echo "===== KernelSU / KPROBE ====="
           grep -E 'CONFIG_(KSU|KPROBE)' .config || true
 
       - name: Build kernel
         working-directory: kernel
         run: |
           export ARCH=arm64
-
           export PATH="$PWD/toolchain/clang/bin:$PATH"
 
           make -j$(nproc) \
