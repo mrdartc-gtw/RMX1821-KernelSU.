@@ -37,15 +37,24 @@ jobs:
 
       - name: Clone kernel source
         run: |
-          git clone --depth=1 \
+          rm -rf kernel
+
+          git clone \
+            --depth=1 \
+            --single-branch \
             --branch Q \
+            --filter=blob:none \
+            --no-tags \
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
 
           test -f kernel/tools/dct/DrvGen.py
           chmod +x kernel/tools/dct/DrvGen.py
 
-          echo "DrvGen.py found:"
+          echo "===== Kernel source ====="
+          git -C kernel rev-parse --short HEAD
+
+          echo "===== DrvGen.py ====="
           head -n 1 kernel/tools/dct/DrvGen.py
 
       - name: Download Android toolchains
