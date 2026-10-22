@@ -110,8 +110,16 @@ jobs:
           grep -E 'CONFIG_(KSU|KPROBE)' out/.config || true
 
           echo "===== Source tree check ====="
-          test ! -f .config
-          test ! -d include/config
+          if [ -f .config ]; then
+            echo "ERROR: source .config masih ada"
+            exit 1
+          fi
+
+          echo "Source .config tidak ada."
+          echo "include/config boleh ada."
+
+          echo "===== KPROBE status ====="
+          grep -E '^CONFIG_(KPROBES|HAVE_KPROBES|KPROBE_EVENTS|KSU)=' out/.config || true
 
       - name: Build kernel
         working-directory: kernel
