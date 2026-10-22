@@ -73,10 +73,11 @@ jobs:
             "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" \
             | bash -s v0.9.5
 
-            - name: Configure kernel
+      - name: Configure kernel
         working-directory: kernel
         run: |
           export ARCH=arm64
+          export KBUILD_OUTPUT="$PWD/out"
           export KCONFIG_CONFIG="$PWD/out/.config"
 
           rm -f .config
@@ -100,10 +101,12 @@ jobs:
           echo "===== Source tree check ====="
           test ! -f .config
           test ! -d include/config
-            - name: Build kernel
+
+      - name: Build kernel
         working-directory: kernel
         run: |
           export ARCH=arm64
+          export KBUILD_OUTPUT="$PWD/out"
           export KCONFIG_CONFIG="$PWD/out/.config"
           export PATH="$PWD/toolchain/clang/bin:$PATH"
 
