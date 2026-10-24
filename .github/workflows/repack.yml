@@ -1,14 +1,13 @@
-name: Repack RMX1821 KernelSU v4
+name: Build and Repack RMX1821 KernelSU v4
 
 on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
-  repack:
+  build-repack:
     runs-on: ubuntu-22.04
 
     steps:
@@ -19,36 +18,101 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            ccache \
             curl \
+            flex \
+            git \
+            libelf-dev \
+            libssl-dev \
+            python2 \
+            python2-minimal \
             unzip \
+            zip \
             jq \
-            file \
-            python3
+            file
 
-      - name: Download original boot.img
+          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
+
+      - name: Download kernel source
         run: |
-          mkdir -p original
+          rm -rf kernel kernel.tar.gz
 
           curl -L --fail \
             --retry 5 \
             --retry-delay 5 \
-            -o original/boot.img \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/boot-original/boot.img"
+            -o kernel.tar.gz \
+            https://github.com/Dark-Matter7232/CosmicFresh-RMX1821/archive/refs/heads/Q.tar.gz
 
-          test -s original/boot.img
+          tar -xzf kernel.tar.gz
 
-          echo "===== Original boot ====="
-          ls -lh original/boot.img
-          file original/boot.img
+          mv CosmicFresh-RMX1821-Q kernel
 
-      - name: Download KernelSU v2 artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
+          test -f kernel/tools/dct/DrvGen.py
+
+          chmod +x kernel/tools/dct/DrvGen.py
+
+      - name: Download Android toolchains
+        working-directory: kernel
         run: |
-          mkdir -p kernel-artifact
+          mkdir -p toolchain
+          cd toolchain
 
-          ARTIFACT_ID=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-            --jq '.artifacts[]
-              | select(.name == "RMX1821-KernelSU-v2")
-              | select(.expired
+          git clone --depth=1 \
+            https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r437112.git \
+            clang
+
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+            gcc64
+
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
+            gcc32
+
+      - name: Integrate KernelSU
+        working-directory: kernel
+        run: |
+          curl -LSs \
+            https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh \
+            | bash -s v0.9.5
+
+      - name: Configure kernel
+        working-directory: kernel
+        run: |
+          set -euxo pipefail
+
+          export ARCH=arm64
+          export KBUILD_OUTPUT="$PWD/out"
+          export KCONFIG_CONFIG="$PWD/out/.config"
+
+          rm -f .config
+          rm -rf include/config
+
+          make RMX1821_defconfig
+
+          test -f out/.config
+
+          ./scripts/config \
+            --file out/.config \
+            --enable CONFIG_KSU
+
+          KCONFIG_CONFIG="$PWD/out/.config" make olddefconfig
+
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          set -euxo pipefail
+
+          export ARCH=arm64
+          export KBUILD_OUTPUT="$PWD/out"
+          export PATH="$PWD/toolchain/clang/bin:$PATH"
+
+          make -j$(nproc) \
+            ARCH=arm64 \
+            KBUILD_OUTPUT="$PWD/out" \
+            KCONFIG_CONFIG="$PWD/out/.config" \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu-
