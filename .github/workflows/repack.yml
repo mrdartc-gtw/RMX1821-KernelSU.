@@ -281,117 +281,110 @@ jobs:
       # ============================================================
       # 13. DOWNLOAD AND PREPARE MAGISK SOURCE
       # ============================================================
-      - name: Prepare Magisk source
-        run: |
-          set -eux
+- name: Prepare Magisk source
+  run: |
+    set -eux
 
-          rm -rf magisk-source
-          rm -f magiskboot
+    rm -rf magisk-source
+    rm -f magiskboot
 
-          echo "===== Clone Magisk ====="
+    git clone \
+      --depth=1 \
+      --recurse-submodules \
+      https://github.com/topjohnwu/Magisk.git \
+      magisk-source
 
-          git clone \
-            --depth=1 \
-            --recurse-submodules \
-            https://github.com/topjohnwu/Magisk.git \
-            magisk-source
+    cd magisk-source
 
-          cd magisk-source
+    git submodule update --init --recursive
 
-          echo "===== Magisk commit ====="
+    echo "===== Magisk commit ====="
+    git rev-parse HEAD
 
-          git rev-parse HEAD
+    echo "===== Submodules ====="
+    git submodule status
 
-          echo "===== Submodules ====="
+    echo "===== cxx-rs ====="
+    test -f native/src/external/cxx-rs/Cargo.toml
 
-          git submodule status
+    echo "===== Build help ====="
+    python3 build.py --help
 
-          echo "===== Initialize missing submodules ====="
+    echo "===== Build NDK ====="
+    python3 build.py ndk
 
-          git submodule update \
-            --init \
-            --recursive
+    echo "===== Build magiskboot ====="
+    python3 build.py native magiskboot
 
-          echo "===== Check cxx-rs ====="
+    echo "===== Search magiskboot ====="
+    find . -type f -name magiskboot -print
 
-          test -f native/src/external/cxx-rs/Cargo.toml
+    echo "===== Check candidates ====="
+    while IFS= read -r f; do
+      echo "----- $f -----"
+      file "$f" || true
+      ls -lh "$f" || true
+    done < <(find . -type f -name magiskboot)
 
-          echo "cxx-rs found."
+    echo "===== Select Linux x86_64 executable ====="
 
-          ls -lh native/src/external/cxx-rs/Cargo.toml
+    MAGISKBOOT=""
 
-          echo "===== Build.py help ====="
+    while IFS= read -r f; do
+      if file "$f" | grep -Eq 'ELF 64-bit.*x86-64'; then
+        if file "$f" | grep -q 'executable'; then
+          MAGISKBOOT="$f"
+          break
+        fi
+      fi
+    done < <(find . -type f -name magiskboot)
 
-          python3 build.py --help
+    if [ -z "$MAGISKBOOT" ]; then
+      echo "ERROR: Linux x86_64 executable magiskboot was not found."
+      echo
+      echo "All magiskboot candidates:"
+      find . -type f -name magiskboot -exec file {} \;
+      exit 1
+    fi
 
-          echo "===== Prepare Magisk NDK ====="
+    echo "Selected:"
+    echo "$MAGISKBOOT"
 
-          python3 build.py ndk
+    file "$MAGISKBOOT"
+    ls -lh "$MAGISKBOOT"
 
-          echo "===== Build MagiskBoot ====="
+    cp "$MAGISKBOOT" "$GITHUB_WORKSPACE/magiskboot"
 
-          python3 build.py native magiskboot
+    chmod +x "$GITHUB_WORKSPACE/magiskboot"
 
-          echo "===== Search MagiskBoot ====="
-
-          find . \
-            -type f \
-            -name magiskboot \
-            -print
-
-          MAGISKBOOT=$(find . \
-            -type f \
-            -name magiskboot \
-            | head -n 1)
-
-          test -n "$MAGISKBOOT"
-
-          echo "===== MagiskBoot found ====="
-
-          echo "$MAGISKBOOT"
-
-          echo "===== MagiskBoot information ====="
-
-          file "$MAGISKBOOT"
-
-          ls -lh "$MAGISKBOOT"
-
-          echo "===== Copy MagiskBoot ====="
-
-          cp \
-            "$MAGISKBOOT" \
-            "$GITHUB_WORKSPACE/magiskboot"
-
-          chmod +x \
-            "$GITHUB_WORKSPACE/magiskboot"
-
+    echo "===== Final magiskboot ====="
+    file "$GITHUB_WORKSPACE/magiskboot"
+    ls -lh "$GITHUB_WORKSPACE/magiskboot"
 
       # ============================================================
       # 14. VERIFY MAGISKBOOT
-      # ============================================================
-      - name: Verify MagiskBoot
-        run: |
-          set -eux
+      # =========================================================== - name: Verify MagiskBoot architecture
+  run: |
+    set -eux
 
-          echo "===== Check MagiskBoot ====="
+    test -f "$GITHUB_WORKSPACE/magiskboot"
 
-          test -f magiskboot
+    chmod +x "$GITHUB_WORKSPACE/magiskboot"
 
-          chmod +x magiskboot
+    echo "===== File ====="
+    file "$GITHUB_WORKSPACE/magiskboot"
 
-          file magiskboot
+    echo "===== Architecture ====="
+    readelf -h "$GITHUB_WORKSPACE/magiskboot" | grep -E 'Class|Data|Machine|Type'
 
-          ls -lh magiskboot
+    echo "===== Permissions ====="
+    ls -lh "$GITHUB_WORKSPACE/magiskboot"
 
-          echo "===== MagiskBoot help ====="
+    echo "===== Execute test ====="
+    "$GITHUB_WORKSPACE/magiskboot" --help || true
 
-          ./magiskboot --help || true
-
-          echo "===== MagiskBoot version ====="
-
-          ./magiskboot version || true
-
-          echo "===== MagiskBoot is ready ====="
+    echo "===== Version test ====="
+    "$GITHUB_WORKSPACE/magiskboot" version || true
 
       # ============================================================
       # 15. DOWNLOAD ORIGINAL BOOT
@@ -432,37 +425,32 @@ jobs:
       # 16. UNPACK ORIGINAL BOOT
       # ============================================================
       - name: Unpack original boot
-        run: |
-          set -eux
+  run: |
+    set -eux
 
-          rm -rf unpack
+    rm -rf unpack
+    mkdir -p unpack
 
-          mkdir -p unpack
+    cp original/boot.img unpack/boot.img
 
-          cp original/boot.img unpack/boot.img
+    cd unpack
 
-          cd unpack
+    "$GITHUB_WORKSPACE/magiskboot" unpack boot.img
 
-          "$GITHUB_WORKSPACE/magiskboot" unpack boot.img
+    echo "===== UNPACK RESULT ====="
+    ls -lah
 
-          echo "===== UNPACK RESULT ====="
+    echo "===== Boot files ====="
 
-          ls -lah
-
-          echo "===== Boot files ====="
-
-          for f in kernel kernel_dtb dtb ramdisk.cpio ramdisk.cpio.gz second extra recovery_dtbo; do
-
-            if [ -f "$f" ]; then
-              echo "FOUND: $f"
-              file "$f"
-              stat -c "%n %s bytes" "$f"
-            else
-              echo "NOT FOUND: $f"
-            fi
-
-          done
-
+    for f in kernel kernel_dtb dtb ramdisk.cpio ramdisk.cpio.gz second extra recovery_dtbo; do
+      if [ -f "$f" ]; then
+        echo "FOUND: $f"
+        file "$f"
+        stat -c "%n %s bytes" "$f"
+      else
+        echo "NOT FOUND: $f"
+      fi
+    done
 
       # ============================================================
       # 17. PREPARE KERNEL
