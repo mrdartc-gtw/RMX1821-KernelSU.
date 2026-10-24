@@ -25,14 +25,10 @@ jobs:
             device-tree-compiler file gzip python3 python3-pip \
             perl rsync
 
-      - name: Set up Python 2.7 for legacy DrvGen
-        uses: actions/setup-python@v5
-        with:
-          python-version: '2.7'
-
-      - name: Clone kernel source
+           - name: Clone kernel source
         run: |
           set -eux
+
           git clone --depth=1 -b Q \
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
@@ -43,8 +39,12 @@ jobs:
 
           echo "===== DRVGEN ====="
           ls -lah kernel/tools/dct/DrvGen.py
-          head -n 3 kernel/tools/dct/DrvGen.py || true
-          python2.7 --version
+          file kernel/tools/dct/DrvGen.py
+          head -n 5 kernel/tools/dct/DrvGen.py || true
+
+          echo "===== PYTHON ====="
+          python3 --version
+          which python3
 
       - name: Download toolchains
         run: |
@@ -86,9 +86,10 @@ jobs:
 
           echo "KernelSU v0.9.5 integration verified"
 
-      - name: Prepare DrvGen invocation
+       - name: Prepare DrvGen
         run: |
           set -eux
+
           cd kernel
 
           test -f tools/dct/DrvGen.py
@@ -96,12 +97,20 @@ jobs:
 
           chmod +x tools/dct/DrvGen.py
 
-          # Use Python 2.7 explicitly for this legacy generator.
+          echo "===== DRVGEN BEFORE ====="
+          grep -n "DrvGen" scripts/drvgen/drvgen.mk || true
+
+          # The old kernel Makefile directly executes DrvGen.py.
+          # Force it to run through Python 3.
           sed -i \
-            's#\.\./tools/dct/DrvGen\.py#python2.7 ../tools/dct/DrvGen.py#g' \
+            's#\.\./tools/dct/DrvGen\.py#python3 ../tools/dct/DrvGen.py#g' \
             scripts/drvgen/drvgen.mk
 
+          echo "===== DRVGEN AFTER ====="
           grep -n "DrvGen" scripts/drvgen/drvgen.mk
+
+          echo "===== TEST DRVGEN ====="
+          python3 tools/dct/DrvGen.py || true
 
       - name: Configure kernel
         run: |
