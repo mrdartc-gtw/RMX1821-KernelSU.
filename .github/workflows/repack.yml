@@ -104,15 +104,35 @@ jobs:
       - name: Build kernel
         working-directory: kernel
         run: |
-          set -euxo pipefail
+          set -o pipefail
 
           export ARCH=arm64
           export KBUILD_OUTPUT="$PWD/out"
           export PATH="$PWD/toolchain/clang/bin:$PATH"
+
+          echo "===== Toolchain ====="
+          clang --version
+          python --version
+
+          echo "===== Kernel config ====="
+          grep -E '^CONFIG_KSU=' out/.config || true
+
+          echo "===== Starting kernel build ====="
 
           make -j$(nproc) \
             ARCH=arm64 \
             KBUILD_OUTPUT="$PWD/out" \
             KCONFIG_CONFIG="$PWD/out/.config" \
             CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu-
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$PWD/toolchain/gcc64/bin/aarch64-linux-android-" \
+            CROSS_COMPILE_ARM32="$PWD/toolchain/gcc32/bin/arm-linux-androideabi-" \
+            CONFIG_NO_ERROR_ON_MISMATCH=y \
+            Image.gz-dtb
+
+          echo "===== Build finished ====="
+
+          test -s out/arch/arm64/boot/Image.gz-dtb
+
+          ls -lh out/arch/arm64/boot/Image.gz-dtb
+          file out/arch/arm64/boot/Image.gz-dtb
