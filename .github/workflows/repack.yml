@@ -223,9 +223,15 @@ jobs:
 
           grep -Rni \
             "config KSU" \
-            KernelSU \
+            drivers/kernelsu \
             --include='Kconfig*' \
             || true
+
+          echo "===== KernelSU Kconfig ====="
+
+          test -f drivers/kernelsu/Kconfig
+
+          grep -n "config KSU" drivers/kernelsu/Kconfig
 
 
           echo "============================================================"
