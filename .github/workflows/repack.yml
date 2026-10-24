@@ -61,20 +61,34 @@ jobs:
 
           find kernel-artifact -type f -ls
 
-      - name: Prepare kernel
+      - name: Split kernel and DTB
         run: |
-          IMAGE=$(find kernel-artifact -name "Image.gz-dtb" | head -n 1)
+          python3 - <<'PY'
+          import pathlib
+          import zlib
 
-          if [ -z "$IMAGE" ]; then
-            echo "Image.gz-dtb tidak ditemukan."
-            exit 1
-          fi
+          data = pathlib.Path("Image.gz-dtb").read_bytes()
 
-          cp "$IMAGE" Image.gz-dtb
+          decoder = zlib.decompressobj(31)
+          decoder.decompress(data)
 
-          echo "===== Kernel ====="
-          ls -lh Image.gz-dtb
-          file Image.gz-dtb
+          if not decoder.eof:
+              raise SystemExit("ERROR: Kernel gzip tidak valid")
+
+          dtb = decoder.unused_data
+
+          if not dtb.startswith(bytes.fromhex("d00dfeed")):
+              raise SystemExit("ERROR: DTB tidak ditemukan")
+
+          kernel = data[:-len(dtb)]
+
+          pathlib.Path("kernel-only.gz").write_bytes(kernel)
+          pathlib.Path("embedded.dtb").write_bytes(dtb)
+
+          print("Kernel gzip:", len(kernel), "bytes")
+          print("DTB:", len(dtb), "bytes")
+          print("Kernel dan DTB berhasil dipisahkan")
+          PY
 
       - name: Download Magisk
         run: |
@@ -113,16 +127,21 @@ jobs:
           echo "===== Original boot ====="
           ls -lah
 
-      - name: Replace kernel
+      - name: Replace kernel without duplicate DTB
         run: |
           test -f unpack/kernel
-          test -f Image.gz-dtb
+          test -f unpack/dtb
 
-          cp Image.gz-dtb unpack/kernel
+          echo "===== Compare DTB ====="
+          cmp embedded.dtb unpack/dtb
 
-          echo "===== New kernel ====="
+          echo "DTB sesuai dengan boot original"
+
+          cp kernel-only.gz unpack/kernel
+
+          echo "===== Kernel baru ====="
           ls -lh unpack/kernel
-          file unpack/kernel
+          ls -lh unpack/dtb
 
       - name: Repack boot
         run: |
