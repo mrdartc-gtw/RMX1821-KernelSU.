@@ -1,10 +1,10 @@
-name: Build and Repack RMX1821 KernelSU v5
+name: Build RMX1821 KernelSU v0.9.5
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-and-repack:
+  build:
     runs-on: ubuntu-22.04
 
     steps:
@@ -14,7 +14,6 @@ jobs:
       # ============================================================
       - name: Checkout workflow repository
         uses: actions/checkout@v4
-
 
       # ============================================================
       # 2. INSTALL DEPENDENCIES
@@ -35,328 +34,164 @@ jobs:
             git \
             libelf-dev \
             libssl-dev \
-            python2 \
-            python2-minimal \
             python3 \
-            zip \
+            python3-pip \
             unzip \
             wget \
-            file \
-            rsync \
-            clang \
-            cmake \
-            ninja-build \
-            binutils
-
-          echo "===== Python 2 ====="
-          which python2
-          python2 --version
-
-          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
-
-          echo "===== Python ====="
-          which python
-          python --version
-
-          echo "===== Python 3 ====="
-          which python3
-          python3 --version
-
+            xz-utils \
+            zip \
+            device-tree-compiler
 
       # ============================================================
       # 3. CLONE KERNEL SOURCE
       # ============================================================
-      - name: Clone RMX1821 kernel source
+      - name: Clone kernel source
         run: |
           set -eux
 
-          git clone \
-            --depth=1 \
-            --branch Q \
+          git clone --depth=1 \
+            -b Q \
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
 
+          cd kernel
+
+          git rev-parse HEAD
 
       # ============================================================
-      # 4. FIX DRVGEN.PY
+      # 4. DOWNLOAD CLANG
       # ============================================================
-      - name: Fix DrvGen interpreter
-        working-directory: kernel
+      - name: Clone Clang r437112
         run: |
           set -eux
 
-          echo "===== DrvGen location ====="
-
-          ls -l tools/dct/DrvGen.py
-
-          echo "===== Original shebang ====="
-
-          head -n 1 tools/dct/DrvGen.py || true
-
-          sed -i 's/\r$//' tools/dct/DrvGen.py
-
-          sed -i '1c\#!/usr/bin/env python2' tools/dct/DrvGen.py
-
-          chmod +x tools/dct/DrvGen.py
-
-          echo "===== New shebang ====="
-
-          head -n 1 tools/dct/DrvGen.py
-
-          echo "===== Python 2 ====="
-
-          which python2
-          python2 --version
-
-          echo "===== Python 2 test ====="
-
-          python2 -c 'print("Python 2 OK")'
-
-          echo "===== DrvGen test ====="
-
-          python2 tools/dct/DrvGen.py || true
-
-
-      # ============================================================
-      # 5. DOWNLOAD CLANG r437112
-      # ============================================================
-      - name: Download Clang r437112
-        run: |
-          set -eux
-
-          git clone \
-            --depth=1 \
+          git clone --depth=1 \
             https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r437112.git \
             clang
 
+          test -x clang/bin/clang
+          clang/bin/clang --version
 
       # ============================================================
-      # 6. DOWNLOAD ARM64 GCC 4.9
+      # 5. DOWNLOAD GCC ARM64
       # ============================================================
-      - name: Download ARM64 GCC 4.9
+      - name: Clone GCC arm64 4.9
         run: |
           set -eux
 
-          git clone \
-            --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
             gcc64
 
+          test -x gcc64/bin/aarch64-linux-android-gcc
 
       # ============================================================
-      # 7. DOWNLOAD ARM32 GCC 4.9
+      # 6. DOWNLOAD GCC ARM32
       # ============================================================
-      - name: Download ARM32 GCC 4.9
+      - name: Clone GCC arm32 4.9
         run: |
           set -eux
 
-          git clone \
-            --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
             gcc32
 
+          test -x gcc32/bin/arm-linux-androideabi-gcc
 
       # ============================================================
-      # 8. INTEGRATE KERNELSU v0.9.5
+      # 7. INTEGRATE KERNELSU v0.9.5
       # ============================================================
       - name: Integrate KernelSU v0.9.5
         working-directory: kernel
         run: |
           set -eux
 
-          echo "===== Integrate KernelSU v0.9.5 ====="
+          echo "============================================================"
+          echo "INTEGRATE KERNELSU v0.9.5"
+          echo "============================================================"
 
           curl -LSs \
             https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh \
             | bash -s -- v0.9.5
 
-          echo "===== KernelSU directory ====="
-
           test -d KernelSU
 
-          ls -lah KernelSU
-
           echo "===== KernelSU version ====="
-
-          git -C KernelSU describe --tags --always
-
-          echo "===== Verify exact version ====="
+          git -C KernelSU describe --tags --exact-match
 
           test "$(git -C KernelSU describe --tags --exact-match)" = "v0.9.5"
 
-          echo "KernelSU v0.9.5 confirmed."
-
-          echo "===== Check KernelSU integration ====="
+          echo "===== KernelSU integration ====="
 
           test -L drivers/kernelsu
-
           test -f drivers/kernelsu/Kconfig
-
           test -f drivers/kernelsu/Makefile
 
-          echo "KernelSU integration detected."
-
-          echo "===== Integration ====="
-
-          ls -lah drivers/kernelsu
-
+          echo "KernelSU v0.9.5 successfully integrated."
 
       # ============================================================
-      # 9. CONFIGURE KERNEL
+      # 8. CONFIGURE KERNEL
       # ============================================================
       - name: Configure kernel
         working-directory: kernel
-        env:
-          ARCH: arm64
-          SUBARCH: arm64
         run: |
           set -eux
 
+          echo "============================================================"
+          echo "CONFIGURE KERNEL"
+          echo "============================================================"
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+
           export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
-
-          export CROSS_COMPILE="$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-"
-          export CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-"
-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-
-          echo "===== Toolchain ====="
-
-          clang --version
-          aarch64-linux-android-gcc --version
-          arm-linux-androideabi-gcc --version
-
-          echo "===== KernelSU Kconfig ====="
-
-          test -f drivers/kernelsu/Kconfig
-          test -f drivers/kernelsu/Makefile
-
-          grep -Rni \
-            "config KSU" \
-            drivers/kernelsu \
-            --include='Kconfig*' \
-            || true
-
-          echo "===== Defconfig ====="
 
           make O=out RMX1821_defconfig
 
-          echo "===== Enable KernelSU ====="
-
-          ./scripts/config \
-            --file out/.config \
-            --enable CONFIG_KSU
-
-          echo "===== Enable KPROBES ====="
-
-          ./scripts/config \
-            --file out/.config \
-            --enable CONFIG_KPROBES
-
-          echo "===== Enable KPROBE EVENTS ====="
-
-          ./scripts/config \
-            --file out/.config \
-            --enable CONFIG_KPROBE_EVENTS
-
-          echo "===== BEFORE olddefconfig ====="
-
-          grep -E \
-            '^(CONFIG_KSU|CONFIG_KPROBES|CONFIG_KPROBE_EVENTS|CONFIG_HAVE_KPROBES)=' \
-            out/.config \
-            || true
-
-          echo "===== olddefconfig ====="
+          ./scripts/config --file out/.config --enable CONFIG_KSU
+          ./scripts/config --file out/.config --enable CONFIG_KPROBES
+          ./scripts/config --file out/.config --enable CONFIG_KPROBE_EVENTS
 
           make O=out olddefconfig
 
-          echo "===== AFTER olddefconfig ====="
+          echo "===== KernelSU configuration ====="
 
           grep -E \
             '^(CONFIG_KSU|CONFIG_KPROBES|CONFIG_KPROBE_EVENTS|CONFIG_HAVE_KPROBES)=' \
-            out/.config \
-            || true
+            out/.config || true
 
+          test "$(grep '^CONFIG_KSU=' out/.config)" = "CONFIG_KSU=y"
+          test "$(grep '^CONFIG_KPROBES=' out/.config)" = "CONFIG_KPROBES=y"
+          test "$(grep '^CONFIG_KPROBE_EVENTS=' out/.config)" = "CONFIG_KPROBE_EVENTS=y"
 
-      # ============================================================
-      # 10. VERIFY KERNELSU CONFIGURATION
-      # ============================================================
-      - name: Verify KernelSU configuration
-        working-directory: kernel
-        run: |
-          set -eux
-
-          echo "============================================================"
-          echo "FINAL KERNELSU CONFIGURATION"
-          echo "============================================================"
-
-          grep -E \
-            '^(CONFIG_KSU|CONFIG_KPROBES|CONFIG_KPROBE_EVENTS|CONFIG_HAVE_KPROBES)=' \
-            out/.config \
-            || true
-
-
-          echo "============================================================"
-          echo "REQUIRED CONFIGURATION"
-          echo "============================================================"
-
-          grep -q '^CONFIG_KSU=y$' out/.config
-
-          grep -q '^CONFIG_KPROBES=y$' out/.config
-
-          grep -q '^CONFIG_KPROBE_EVENTS=y$' out/.config
-
-
-          echo "============================================================"
-          echo "CHECK HAVE_KPROBES"
-          echo "============================================================"
-
-          if grep -q '^CONFIG_HAVE_KPROBES=y$' out/.config; then
-
-            echo "CONFIG_HAVE_KPROBES=y"
-
-          else
-
-            echo "WARNING:"
-            echo "CONFIG_HAVE_KPROBES is not explicitly present."
-            echo "This is an architecture capability symbol."
-            echo "Continuing."
-
-          fi
-
-
-          echo "============================================================"
-          echo "KERNELSU CONFIGURATION OK"
-          echo "============================================================"
-
+          echo "KernelSU configuration OK."
 
       # ============================================================
-      # 11. BUILD KERNEL
+      # 9. BUILD KERNEL
       # ============================================================
       - name: Build kernel
         working-directory: kernel
-        env:
-          ARCH: arm64
-          SUBARCH: arm64
         run: |
           set -eux
-
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
-
-          export CROSS_COMPILE="$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-"
-          export CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-"
-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
 
           echo "============================================================"
           echo "BUILD KERNEL"
           echo "============================================================"
 
-          make -j"$(nproc)" \
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          export CROSS_COMPILE="$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-"
+          export CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-"
+
+          export CC="$GITHUB_WORKSPACE/clang/bin/clang"
+
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
+
+          make -j$(nproc) \
             O=out \
-            CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1 \
             ARCH=arm64 \
+            CC=clang \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             Image.gz-dtb
@@ -373,50 +208,54 @@ jobs:
 
           sha256sum out/arch/arm64/boot/Image.gz-dtb
 
-
       # ============================================================
-      # 12. VERIFY KERNEL OUTPUT
+      # 10. VERIFY KERNELSU IN BUILT KERNEL
       # ============================================================
-      - name: Verify kernel output
+      - name: Verify KernelSU in kernel
         working-directory: kernel
         run: |
           set -eux
 
-          echo "===== Boot directory ====="
+          echo "============================================================"
+          echo "VERIFY KERNELSU"
+          echo "============================================================"
 
-          ls -lh out/arch/arm64/boot/
+          grep -aob "KernelSU" \
+            out/arch/arm64/boot/Image.gz-dtb \
+            | head -20 || true
 
-          test -f out/arch/arm64/boot/Image.gz-dtb
+          grep -aob "/data/adb/ksud" \
+            out/arch/arm64/boot/Image.gz-dtb \
+            | head -20 || true
 
-          echo "===== Kernel SHA256 ====="
-
-          sha256sum out/arch/arm64/boot/Image.gz-dtb
-
-          echo "===== Kernel size ====="
-
-          stat -c%s out/arch/arm64/boot/Image.gz-dtb
-
-
-      # ============================================================
-      # 13. UPLOAD KERNEL ARTIFACT
-      # ============================================================
-      - name: Upload KernelSU kernel
-        uses: actions/upload-artifact@v4
-        with:
-          name: RMX1821-KernelSU-v5
-          path: kernel/out/arch/arm64/boot/Image.gz-dtb
-          if-no-files-found: error
-
+          echo "KernelSU verification completed."
 
       # ============================================================
-      # 14. PREPARE MAGISK SOURCE
+      # 11. DOWNLOAD ORIGINAL BOOT
       # ============================================================
-      - name: Prepare Magisk source
+      - name: Download original boot.img
         run: |
           set -eux
 
-          rm -rf magisk-source
-          rm -f magiskboot
+          mkdir -p unpack
+
+          wget -O unpack/boot.img \
+            https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img
+
+          test -f unpack/boot.img
+
+          ls -lh unpack/boot.img
+
+          sha256sum unpack/boot.img
+
+          stat -c%s unpack/boot.img
+
+      # ============================================================
+      # 12. BUILD MAGISKBOOT
+      # ============================================================
+      - name: Build magiskboot
+        run: |
+          set -eux
 
           git clone \
             --depth=1 \
@@ -428,478 +267,126 @@ jobs:
 
           git submodule update --init --recursive
 
-          echo "===== Magisk commit ====="
-          git rev-parse HEAD
-
-          echo "===== Submodules ====="
-          git submodule status
-
-          echo "===== cxx-rs ====="
           test -f native/src/external/cxx-rs/Cargo.toml
 
-          echo "===== Build help ====="
-          python3 build.py --help
-
-          echo "===== Build NDK ====="
           python3 build.py ndk
-
-          echo "===== Build magiskboot ====="
           python3 build.py native magiskboot
 
-          echo "===== Search magiskboot ====="
-          find . -type f -name magiskboot -print
+          echo "===== Find magiskboot ====="
 
-          echo "===== Check candidates ====="
+          find . -type f -name magiskboot -exec file {} \;
 
-          while IFS= read -r f; do
-            echo "----- $f -----"
-            file "$f" || true
-            ls -lh "$f" || true
-          done < <(find . -type f -name magiskboot)
+          MAGISKBOOT="$(find . -type f -name magiskboot \
+            -exec file {} \; | \
+            grep 'ELF 64-bit.*x86-64' | \
+            head -1 | \
+            cut -d: -f1)"
 
-          echo "===== Select Linux x86_64 executable ====="
+          test -n "$MAGISKBOOT"
 
-          MAGISKBOOT=""
-
-          while IFS= read -r f; do
-
-            FILE_INFO="$(file "$f" || true)"
-
-            echo "Checking:"
-            echo "$f"
-            echo "$FILE_INFO"
-
-            if echo "$FILE_INFO" | grep -Eq 'ELF 64-bit.*x86-64'; then
-
-              if echo "$FILE_INFO" | grep -Eq 'executable|pie executable'; then
-                MAGISKBOOT="$f"
-                break
-              fi
-
-            fi
-
-          done < <(find . -type f -name magiskboot)
-
-          if [ -z "$MAGISKBOOT" ]; then
-
-            echo "ERROR: Linux x86_64 executable magiskboot was not found."
-
-            echo "===== All candidates ====="
-
-            find . \
-              -type f \
-              -name magiskboot \
-              -exec file {} \;
-
-            exit 1
-
-          fi
-
-          echo "===== Selected magiskboot ====="
-
-          echo "$MAGISKBOOT"
-
-          file "$MAGISKBOOT"
-
-          ls -lh "$MAGISKBOOT"
-
-          cp \
-            "$MAGISKBOOT" \
-            "$GITHUB_WORKSPACE/magiskboot"
+          cp "$MAGISKBOOT" "$GITHUB_WORKSPACE/magiskboot"
 
           chmod +x "$GITHUB_WORKSPACE/magiskboot"
 
-          echo "===== Final magiskboot ====="
-
           file "$GITHUB_WORKSPACE/magiskboot"
 
-          ls -lh "$GITHUB_WORKSPACE/magiskboot"
-
-
       # ============================================================
-      # 15. VERIFY MAGISKBOOT ARCHITECTURE
-      # ============================================================
-      - name: Verify MagiskBoot architecture
-        run: |
-          set -eux
-
-          test -f "$GITHUB_WORKSPACE/magiskboot"
-
-          chmod +x "$GITHUB_WORKSPACE/magiskboot"
-
-          echo "===== File ====="
-
-          file "$GITHUB_WORKSPACE/magiskboot"
-
-          echo "===== Architecture ====="
-
-          readelf -h "$GITHUB_WORKSPACE/magiskboot" \
-            | grep -E 'Class|Data|Machine|Type'
-
-          echo "===== Permissions ====="
-
-          ls -lh "$GITHUB_WORKSPACE/magiskboot"
-
-          echo "===== Execute test ====="
-
-          "$GITHUB_WORKSPACE/magiskboot" --help || true
-
-          echo "===== Version test ====="
-
-          "$GITHUB_WORKSPACE/magiskboot" version || true
-
-
-      # ============================================================
-      # 16. DOWNLOAD ORIGINAL BOOT
-      # ============================================================
-      - name: Download original boot
-        run: |
-          set -eux
-
-          mkdir -p original
-
-          wget \
-            --retry-connrefused \
-            --tries=5 \
-            --timeout=30 \
-            -O original/boot.img \
-            https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img
-
-          test -s original/boot.img
-
-          echo "===== Original boot ====="
-
-          ls -lh original/boot.img
-
-          echo "===== SHA256 ====="
-
-          sha256sum original/boot.img
-
-          echo "===== Size ====="
-
-          stat -c%s original/boot.img
-
-          echo "===== File ====="
-
-          file original/boot.img
-
-
-      # ============================================================
-      # 17. UNPACK ORIGINAL BOOT
+      # 13. UNPACK ORIGINAL BOOT
       # ============================================================
       - name: Unpack original boot
         run: |
           set -eux
 
-          rm -rf unpack
-
-          mkdir -p unpack
-
-          cp original/boot.img unpack/boot.img
-
           cd unpack
 
           "$GITHUB_WORKSPACE/magiskboot" unpack boot.img
 
-          echo "===== UNPACK RESULT ====="
+          echo "===== Unpacked files ====="
 
           ls -lah
 
-          echo "===== Boot files ====="
+          test -f kernel
+          test -f kernel_dtb
+          test -f ramdisk.cpio
 
-          for f in \
-            kernel \
-            kernel_dtb \
-            dtb \
-            ramdisk.cpio \
-            ramdisk.cpio.gz \
-            second \
-            extra \
-            recovery_dtbo
-          do
+          echo "===== Original kernel ====="
 
-            if [ -f "$f" ]; then
+          file kernel
+          ls -lh kernel
+          sha256sum kernel
 
-              echo "FOUND: $f"
+          echo "===== Original DTB ====="
 
-              file "$f"
-
-              stat -c "%n %s bytes" "$f"
-
-            else
-
-              echo "NOT FOUND: $f"
-
-            fi
-
-          done
-
+          file kernel_dtb
+          ls -lh kernel_dtb
+          sha256sum kernel_dtb
 
       # ============================================================
-      # 18. PREPARE KERNEL
+      # 14. PREPARE NEW KERNEL
+      #
+      # IMPORTANT:
+      # We keep the ORIGINAL DTB.
+      # Only replace the gzip kernel.
       # ============================================================
-      - name: Prepare KernelSU kernel
+      - name: Replace kernel while preserving original DTB
         working-directory: kernel
         run: |
           set -eux
 
-          mkdir -p "$GITHUB_WORKSPACE/repack"
+          echo "============================================================"
+          echo "PREPARE NEW KERNEL"
+          echo "============================================================"
 
-          cp \
-            out/arch/arm64/boot/Image.gz-dtb \
-            "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
+          rm -rf "$GITHUB_WORKSPACE/newkernel"
+          mkdir -p "$GITHUB_WORKSPACE/newkernel"
 
-          echo "===== New kernel ====="
+          cd "$GITHUB_WORKSPACE/newkernel"
 
-          ls -lh "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
+          cp "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image.gz" kernel.gz
 
-          file "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
+          test -f kernel.gz
 
-          sha256sum "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
+          echo "===== New kernel gzip ====="
 
-          stat -c%s "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
+          file kernel.gz
+          ls -lh kernel.gz
+          sha256sum kernel.gz
 
+          echo "===== Gzip test ====="
+
+          gzip -t kernel.gz
+
+          echo "New kernel gzip is valid."
 
       # ============================================================
-      # 19. DETECT BOOT STRUCTURE
+      # 15. REPLACE ONLY KERNEL
       # ============================================================
-      - name: Detect boot structure
+      - name: Install new kernel into boot tree
         run: |
           set -eux
 
-          echo "===== Original boot structure ====="
+          echo "============================================================"
+          echo "INSTALL NEW KERNEL"
+          echo "============================================================"
 
-          for f in kernel kernel_dtb dtb; do
+          cp newkernel/kernel.gz unpack/kernel
 
-            if [ -f "unpack/$f" ]; then
+          echo "===== Kernel after replacement ====="
 
-              echo "$f: YES"
+          file unpack/kernel
+          ls -lh unpack/kernel
+          sha256sum unpack/kernel
 
-              file "unpack/$f"
+          echo "===== DTB remains original ====="
 
-              stat -c "%n %s bytes" "unpack/$f"
-
-            else
-
-              echo "$f: NO"
-
-            fi
-
-          done
-
-          echo "===== Header ====="
-
-          if [ -f unpack/header ]; then
-            cat unpack/header
-          else
-            echo "header file not generated"
-          fi
-
+          file unpack/kernel_dtb
+          ls -lh unpack/kernel_dtb
+          sha256sum unpack/kernel_dtb
 
       # ============================================================
-      # 20. PREPARE NEW KERNEL / DTB
+      # 16. REPACK BOOT
       # ============================================================
-      - name: Prepare kernel replacement
-        run: |
-          set -eux
-
-          IMAGE="$GITHUB_WORKSPACE/repack/Image.gz-dtb"
-
-          echo "===== New Image.gz-dtb ====="
-
-          file "$IMAGE"
-
-          stat -c%s "$IMAGE"
-
-          echo "===== Detect appended DTB ====="
-
-          python3 - "$IMAGE" <<'PY'
-          import sys
-          import struct
-
-          path = sys.argv[1]
-
-          with open(path, "rb") as f:
-              data = f.read()
-
-          magic = b"\xd0\x0d\xfe\xed"
-
-          print("Image size:", len(data))
-
-          found = []
-
-          pos = 0
-
-          while True:
-
-              pos = data.find(magic, pos)
-
-              if pos == -1:
-                  break
-
-              if pos + 8 <= len(data):
-
-                  totalsize = struct.unpack(
-                      ">I",
-                      data[pos + 4:pos + 8]
-                  )[0]
-
-                  end = pos + totalsize
-
-                  print(
-                      "Possible DTB:",
-                      "offset =", pos,
-                      "size =", totalsize,
-                      "end =", end
-                  )
-
-                  if totalsize > 0 and end == len(data):
-                      found.append((pos, totalsize))
-
-              pos += 4
-
-          if not found:
-
-              print("No appended DTB ending at file end.")
-
-              with open(
-                  "repack/kernel",
-                  "wb"
-              ) as f:
-                  f.write(data)
-
-              sys.exit(0)
-
-          pos, totalsize = found[-1]
-
-          print("===== VALID APPENDED DTB =====")
-
-          print("Kernel end:", pos)
-          print("DTB size:", totalsize)
-          print("DTB end:", pos + totalsize)
-
-          kernel = data[:pos]
-          dtb = data[pos:pos + totalsize]
-
-          with open(
-              "repack/kernel.gz",
-              "wb"
-          ) as f:
-              f.write(kernel)
-
-          with open(
-              "repack/dtb",
-              "wb"
-          ) as f:
-              f.write(dtb)
-
-          print("kernel.gz:", len(kernel), "bytes")
-          print("dtb:", len(dtb), "bytes")
-          PY
-
-          echo "===== Repack files ====="
-
-          ls -lah repack
-
-          for f in \
-            repack/kernel \
-            repack/kernel.gz \
-            repack/dtb
-          do
-
-            if [ -f "$f" ]; then
-
-              echo "FOUND: $f"
-
-              file "$f"
-
-              stat -c "%n %s bytes" "$f"
-
-            fi
-
-          done
-
-
-      # ============================================================
-      # 21. REPLACE KERNEL / DTB
-      # ============================================================
-      - name: Replace kernel and DTB
-        run: |
-          set -eux
-
-          echo "===== Original structure ====="
-
-          if [ -f unpack/kernel_dtb ]; then
-
-            echo "Using kernel + kernel_dtb structure"
-
-            test -f repack/kernel.gz
-            test -f repack/dtb
-
-            cp \
-              repack/kernel.gz \
-              unpack/kernel
-
-            cp \
-              repack/dtb \
-              unpack/kernel_dtb
-
-          elif [ -f unpack/dtb ]; then
-
-            echo "Using kernel + dtb structure"
-
-            test -f repack/kernel.gz
-            test -f repack/dtb
-
-            cp \
-              repack/kernel.gz \
-              unpack/kernel
-
-            cp \
-              repack/dtb \
-              unpack/dtb
-
-          elif [ -f unpack/kernel ]; then
-
-            echo "Using single kernel structure"
-
-            cp \
-              repack/Image.gz-dtb \
-              unpack/kernel
-
-          else
-
-            echo "ERROR: Unknown boot structure"
-
-            exit 1
-
-          fi
-
-          echo "===== Replacement result ====="
-
-          for f in \
-            unpack/kernel \
-            unpack/kernel_dtb \
-            unpack/dtb
-          do
-
-            if [ -f "$f" ]; then
-
-              echo "FOUND: $f"
-
-              file "$f"
-
-              stat -c "%n %s bytes" "$f"
-
-            fi
-
-          done
-
-
-      # ============================================================
-      # 22. REPACK BOOT
-      # ============================================================
-      - name: Repack boot image
+      - name: Repack boot.img
         run: |
           set -eux
 
@@ -907,7 +394,9 @@ jobs:
 
           "$GITHUB_WORKSPACE/magiskboot" repack boot.img
 
-          echo "===== Repack result ====="
+          echo "============================================================"
+          echo "REPACK RESULT"
+          echo "============================================================"
 
           ls -lah
 
@@ -921,107 +410,66 @@ jobs:
 
           stat -c%s new-boot.img
 
-
       # ============================================================
-      # 23. VERIFY REPACKED BOOT
+      # 17. VERIFY BOOT IMAGE
       # ============================================================
-      - name: Verify repacked boot
+      - name: Verify new boot image
         run: |
           set -eux
 
-          test -f unpack/new-boot.img
+          cd unpack
 
-          rm -rf verify
+          echo "============================================================"
+          echo "VERIFY NEW BOOT IMAGE"
+          echo "============================================================"
 
-          mkdir -p verify
+          "$GITHUB_WORKSPACE/magiskboot" unpack new-boot.img
 
-          cp \
-            unpack/new-boot.img \
-            verify/boot.img
-
-          cd verify
-
-          "$GITHUB_WORKSPACE/magiskboot" unpack boot.img
-
-          echo "===== VERIFIED BOOT ====="
+          echo "===== New boot contents ====="
 
           ls -lah
 
-          echo "===== Kernel ====="
+          test -f kernel
+          test -f kernel_dtb
+          test -f ramdisk.cpio
 
-          for f in kernel kernel_dtb dtb; do
+          echo "===== New boot kernel ====="
 
-            if [ -f "$f" ]; then
+          file kernel
+          ls -lh kernel
 
-              echo "FOUND: $f"
+          echo "===== New boot DTB ====="
 
-              file "$f"
+          file kernel_dtb
+          ls -lh kernel_dtb
 
-              stat -c "%n %s bytes" "$f"
-
-            else
-
-              echo "NOT FOUND: $f"
-
-            fi
-
-          done
-
-          echo "===== Ramdisk ====="
-
-          for f in ramdisk.cpio ramdisk.cpio.gz; do
-
-            if [ -f "$f" ]; then
-
-              echo "FOUND: $f"
-
-              file "$f"
-
-              stat -c "%n %s bytes" "$f"
-
-            else
-
-              echo "NOT FOUND: $f"
-
-            fi
-
-          done
-
-          echo "===== Final boot SHA256 ====="
-
-          sha256sum boot.img
-
-          echo "===== Final boot size ====="
-
-          stat -c%s boot.img
-
+          echo "===== Repack verification successful ====="
 
       # ============================================================
-      # 24. UPLOAD FINAL BOOT
+      # 18. COPY FINAL FILE
       # ============================================================
-      - name: Upload final KernelSU boot
+      - name: Prepare artifact
+        run: |
+          set -eux
+
+          mkdir -p release
+
+          cp unpack/new-boot.img \
+            release/RMX1821-KernelSU-v0.9.5-test.img
+
+          cp kernel/out/arch/arm64/boot/Image.gz-dtb \
+            release/Image.gz-dtb
+
+          sha256sum release/*
+
+          ls -lh release
+
+      # ============================================================
+      # 19. UPLOAD ARTIFACTS
+      # ============================================================
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: RMX1821-KernelSU-v5-boot
-          path: unpack/new-boot.img
+          name: RMX1821-KernelSU-v0.9.5-test
+          path: release/
           if-no-files-found: error
-
-
-      # ============================================================
-      # 25. UPLOAD DEBUG FILES
-      # ============================================================
-      - name: Upload debug files
-        uses: actions/upload-artifact@v4
-        with:
-          name: RMX1821-KernelSU-v5-debug
-          path: |
-            original/boot.img
-            repack/Image.gz-dtb
-            repack/kernel.gz
-            repack/kernel
-            repack/dtb
-            unpack/header
-            unpack/boot.img
-            unpack/new-boot.img
-            verify/boot.img
-          if-no-files-found: warn
