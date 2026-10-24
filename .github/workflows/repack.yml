@@ -1,3 +1,43 @@
+name: Repack RMX1821 KernelSU v2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  repack:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            curl \
+            unzip \
+            jq
+
+      - name: Download original boot.img
+        run: |
+          mkdir -p original
+
+          curl -L \
+            --fail \
+            --retry 5 \
+            --retry-delay 5 \
+            -o original/boot.img \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/boot-original/boot.img"
+
+          echo "===== Original boot ====="
+          ls -lh original/boot.img
+          file original/boot.img
+
       - name: Download KernelSU v2 artifact
         env:
           GH_TOKEN: ${{ github.token }}
