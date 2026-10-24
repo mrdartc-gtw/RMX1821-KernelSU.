@@ -169,7 +169,7 @@ jobs:
       # ============================================================
       # 9. BUILD KERNEL
       # ============================================================
-      - name: Build kernel
+ - name: Build kernel
         working-directory: kernel
         run: |
           set -eux
@@ -184,9 +184,19 @@ jobs:
           export CROSS_COMPILE="$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-"
           export CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-"
 
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+
           export CC="$GITHUB_WORKSPACE/clang/bin/clang"
 
           export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
+
+          echo "===== TOOLCHAIN ====="
+
+          "$GITHUB_WORKSPACE/clang/bin/clang" --version
+
+          "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc" --version | head -1
+
+          echo "===== BUILD ====="
 
           make -j$(nproc) \
             O=out \
@@ -194,6 +204,7 @@ jobs:
             CC=clang \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
             Image.gz-dtb
 
           echo "============================================================"
