@@ -240,14 +240,14 @@ jobs:
           if-no-files-found: error
 
       # ============================================================
-      # 13. DOWNLOAD MAGISKBOOT
+      # 13. DOWNLOAD MAGISK APK / INSPECT MAGISKBOOT
       # ============================================================
       - name: Download Magisk tools
         run: |
           set -eux
 
           rm -rf magisk
-          mkdir -p magisk
+          mkdir -p magisk/apk
 
           MAGISK_VERSION="v30.7"
 
@@ -262,88 +262,43 @@ jobs:
 
           test -s magisk.apk
 
-          echo "===== Verify APK ====="
+          echo "===== APK information ====="
+
           file magisk.apk
           ls -lh magisk.apk
           sha256sum magisk.apk
-
-          echo "===== APK contents ====="
-
-          unzip -l magisk.apk > magisk-apk-list.txt
-
-          grep -Ei 'magiskboot|boot' magisk-apk-list.txt || true
 
           echo "===== Extract APK ====="
 
           unzip -q magisk.apk -d magisk/apk
 
-          echo "===== Search for MagiskBoot ====="
-
-          find magisk/apk -type f \
-            \( -iname '*magiskboot*' -o -iname '*boot*' \) \
-            -print || true
-
-          echo "===== Complete extracted file list ====="
+          echo "===== All APK files ====="
 
           find magisk/apk -type f | sort > magisk-files.txt
 
           cat magisk-files.txt
 
-          echo "===== Search standalone magiskboot ====="
+          echo "===== Search MagiskBoot names ====="
 
-echo "===== Search for MagiskBoot ====="
+          find magisk/apk -type f \
+            \( -iname '*magiskboot*' -o -iname '*boot*' \) \
+            -print || true
 
-find magisk/apk -type f \
-  \( -iname '*magiskboot*' -o -iname '*boot*' \) \
-  -print || true
+          echo "===== Search ELF files ====="
 
-echo "===== Complete extracted file list ====="
+          find magisk/apk -type f -exec file {} \; \
+            | grep -Ei 'ELF|executable|shared object' \
+            || true
 
-find magisk/apk -type f | sort > magisk-files.txt
+          echo "===== Search native libraries ====="
 
-cat magisk-files.txt
+          find magisk/apk -type f \
+            \( -name '*.so' -o -name '*.so.*' \) \
+            -print || true
 
-echo "===== Search possible Magisk binaries ====="
+          echo "===== APK inspection finished ====="
 
-find magisk/apk -type f -exec file {} \; \
-  | grep -Ei 'ELF|executable|shared object' \
-  || true
-
-echo "===== Search magiskboot ====="
-
-MAGISKBOOT=$(find magisk/apk \
-  -type f \
-  \( -name 'magiskboot' -o -name '*magiskboot*' \) \
-  | head -n 1 || true)
-
-if [ -n "$MAGISKBOOT" ]; then
-  echo "Found possible MagiskBoot:"
-  echo "$MAGISKBOOT"
-
-  file "$MAGISKBOOT"
-
-  cp "$MAGISKBOOT" ./magiskboot
-  chmod +x ./magiskboot
-
-  echo "===== Test magiskboot ====="
-
-  file ./magiskboot
-  ./magiskboot --help || true
-
-else
-  echo "ERROR: MagiskBoot binary was not found."
-  echo
-  echo "===== APK FILE LIST ====="
-  cat magisk-files.txt
-  echo
-  echo "===== ELF FILES ====="
-
-  find magisk/apk -type f -exec file {} \; \
-    | grep -Ei 'ELF|executable|shared object' \
-    || true
-
-  exit 1
-fi 
+          echo "Magisk APK has been downloaded and inspected."
 
       # ============================================================
       # 14. DOWNLOAD ORIGINAL BOOT FROM RELEASE
