@@ -18,23 +18,16 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            curl \
-            unzip \
-            jq
+          sudo apt-get install -y curl unzip jq
 
       - name: Download original boot.img
         run: |
           mkdir -p original
 
-          curl -L \
-            --fail \
-            --retry 5 \
-            --retry-delay 5 \
+          curl -L --fail \
             -o original/boot.img \
             "https://github.com/${GITHUB_REPOSITORY}/releases/download/boot-original/boot.img"
 
-          echo "===== Original boot ====="
           ls -lh original/boot.img
           file original/boot.img
 
@@ -43,8 +36,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p kernel-artifact
-
-          echo "===== Searching KernelSU v2 artifact ====="
 
           ARTIFACT_ID=$(gh api \
             "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
@@ -55,25 +46,124 @@ jobs:
             | head -n 1)
 
           if [ -z "$ARTIFACT_ID" ]; then
-            echo "Artifact RMX1821-KernelSU-v2 tidak ditemukan."
-            echo "===== Available artifacts ====="
-
-            gh api \
-              "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-              --jq '.artifacts[] | "\(.id) \(.name) \(.expired)"'
-
+            echo "KernelSU v2 artifact tidak ditemukan."
             exit 1
           fi
 
           echo "Artifact ID: $ARTIFACT_ID"
 
           gh api \
-            -H "Accept: application/vnd.github+json" \
             "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" \
             > kernel-artifact.zip
 
           unzip -o kernel-artifact.zip \
             -d kernel-artifact
 
-          echo "===== Downloaded artifact ====="
           find kernel-artifact -type f -ls
+
+      - name: Prepare kernel
+        run: |
+          IMAGE=$(find kernel-artifact -name "Image.gz-dtb" | head -n 1)
+
+          if [ -z "$IMAGE" ]; then
+            echo "Image.gz-dtb tidak ditemukan."
+            exit 1
+          fi
+
+          cp "$IMAGE" Image.gz-dtb
+
+          echo "===== Kernel ====="
+          ls -lh Image.gz-dtb
+          file Image.gz-dtb
+
+      - name: Download Magisk
+        run: |
+          mkdir -p magisk
+
+          curl -L --fail \
+            https://api.github.com/repos/topjohnwu/Magisk/releases/latest \
+            -o magisk-release.json
+
+          APK_URL=$(jq -r '
+            .assets[]
+            | select(.name | endswith(".apk"))
+            | .browser_download_url
+          ' magisk-release.json | head -n 1)
+
+          curl -L --fail \
+            "$APK_URL" \
+            -o magisk.apk
+
+          unzip -j magisk.apk \
+            "lib/x86_64/libmagiskboot.so" \
+            -d magisk
+
+          mv magisk/libmagiskboot.so magisk/magiskboot
+          chmod +x magisk/magiskboot
+
+      - name: Unpack original boot
+        run: |
+          mkdir -p unpack
+
+          cp original/boot.img unpack/boot.img
+
+          cd unpack
+          ../magisk/magiskboot unpack boot.img
+
+          echo "===== Original boot ====="
+          ls -lah
+
+      - name: Replace kernel
+        run: |
+          test -f unpack/kernel
+          test -f Image.gz-dtb
+
+          cp Image.gz-dtb unpack/kernel
+
+          echo "===== New kernel ====="
+          ls -lh unpack/kernel
+          file unpack/kernel
+
+      - name: Repack boot
+        run: |
+          cd unpack
+
+          ../magisk/magiskboot repack \
+            boot.img \
+            ../boot-kernelsu-v2.img
+
+          cd ..
+
+          echo "===== Repacked image ====="
+          ls -lh boot-kernelsu-v2.img
+          file boot-kernelsu-v2.img
+          sha256sum boot-kernelsu-v2.img
+
+          test -s boot-kernelsu-v2.img
+
+      - name: Verify boot image
+        run: |
+          mkdir -p verify
+
+          ./magisk/magiskboot unpack \
+            boot-kernelsu-v2.img \
+            2>&1 | tee verify.log
+
+          echo "===== Final files ====="
+          ls -lah
+
+          echo "===== Verify files ====="
+          ls -lah verify || true
+
+          test -s boot-kernelsu-v2.img
+
+      - name: Upload boot image
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RMX1821-KernelSU-Boot-v2
+          path: |
+            boot-kernelsu-v2.img
+            verify.log
+          if-no-files-found: error
+          retention-days: 7
