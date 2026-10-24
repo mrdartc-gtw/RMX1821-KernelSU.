@@ -1,7 +1,11 @@
-name: Build RMX1821 KernelSU v2
+
+name: Build RMX1821 KernelSU v0.9.5
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -13,143 +17,228 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -eux
           sudo apt-get update
-
           sudo apt-get install -y \
-            bc \
-            bison \
-            build-essential \
-            ccache \
-            curl \
-            flex \
-            git \
-            libelf-dev \
-            libssl-dev \
-            python2 \
-            python2-minimal \
-            zip
+            bc bison build-essential ccache curl flex git \
+            libelf-dev libssl-dev make unzip wget xz-utils zip \
+            device-tree-compiler file gzip python3 python3-pip \
+            perl rsync
 
-          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
+      - name: Set up Python 2.7 for legacy DrvGen
+        uses: actions/setup-python@v5
+        with:
+          python-version: '2.7'
 
-          python --version
-
-      - name: Download kernel source
+      - name: Clone kernel source
         run: |
-          rm -rf kernel kernel.tar.gz
+          set -eux
+          git clone --depth=1 -b Q \
+            https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
+            kernel
 
-          curl -L \
-            --fail \
-            --retry 5 \
-            --retry-delay 5 \
-            -o kernel.tar.gz \
-            https://github.com/Dark-Matter7232/CosmicFresh-RMX1821/archive/refs/heads/Q.tar.gz
-
-          tar -xzf kernel.tar.gz
-          mv CosmicFresh-RMX1821-Q kernel
-
+          test -f kernel/Makefile
+          test -f kernel/arch/arm64/configs/RMX1821_defconfig
           test -f kernel/tools/dct/DrvGen.py
-          chmod +x kernel/tools/dct/DrvGen.py
 
-          du -sh kernel
+          echo "===== DRVGEN ====="
+          ls -lah kernel/tools/dct/DrvGen.py
+          head -n 3 kernel/tools/dct/DrvGen.py || true
+          python2.7 --version
 
-      - name: Download Android toolchains
-        working-directory: kernel
+      - name: Download toolchains
         run: |
-          mkdir -p toolchain
-          cd toolchain
+          set -eux
 
           git clone --depth=1 \
             https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r437112.git \
             clang
 
           git clone --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
             gcc64
 
           git clone --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
             gcc32
 
-      - name: Integrate KernelSU
-        working-directory: kernel
+          test -x clang/bin/clang
+          test -x gcc64/bin/aarch64-linux-android-gcc
+          test -x gcc32/bin/arm-linux-androideabi-gcc
+
+          clang/bin/clang --version
+          gcc64/bin/aarch64-linux-android-gcc --version | head -n 1
+
+      - name: Integrate KernelSU v0.9.5
         run: |
+          set -eux
+          cd kernel
+
           curl -LSs \
-            "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" \
-            | bash -s v0.9.5
+            https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh \
+            | bash -s -- v0.9.5
+
+          test -d KernelSU
+          test "$(git -C KernelSU describe --tags --exact-match)" = "v0.9.5"
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          test -f drivers/kernelsu/Makefile
+
+          echo "KernelSU v0.9.5 integration verified"
+
+      - name: Prepare DrvGen invocation
+        run: |
+          set -eux
+          cd kernel
+
+          test -f tools/dct/DrvGen.py
+          test -f scripts/drvgen/drvgen.mk
+
+          chmod +x tools/dct/DrvGen.py
+
+          # Use Python 2.7 explicitly for this legacy generator.
+          sed -i \
+            's#\.\./tools/dct/DrvGen\.py#python2.7 ../tools/dct/DrvGen.py#g' \
+            scripts/drvgen/drvgen.mk
+
+          grep -n "DrvGen" scripts/drvgen/drvgen.mk
 
       - name: Configure kernel
-        working-directory: kernel
         run: |
-          set -euxo pipefail
+          set -eux
+          cd kernel
 
           export ARCH=arm64
-          export KBUILD_OUTPUT="$PWD/out"
-          export KCONFIG_CONFIG="$PWD/out/.config"
+          export SUBARCH=arm64
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
 
-          rm -rf out
-          rm -f .config
-          rm -rf include/config
+          make O=out RMX1821_defconfig
 
-          echo "===== Base config ====="
-          make RMX1821_defconfig
+          ./scripts/config --file out/.config --enable CONFIG_KSU
+          ./scripts/config --file out/.config --enable CONFIG_KPROBES
+          ./scripts/config --file out/.config --enable CONFIG_KPROBE_EVENTS
 
-          test -f out/.config
+          make O=out olddefconfig
 
-          echo "===== KernelSU configuration ====="
+          echo "===== CHECK KERNELSU CONFIG ====="
+          grep -E '^CONFIG_(KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
 
-          ./scripts/config \
-            --file out/.config \
-            --enable CONFIG_KSU
-
-          echo "===== Existing KPROBES configuration ====="
-          grep -E '^CONFIG_(KPROBES|HAVE_KPROBES|KPROBE_EVENTS)=' \
-            out/.config || true
-
-          echo "===== olddefconfig ====="
-          make olddefconfig
-
-          echo "===== Final KernelSU configuration ====="
-          grep -E '^CONFIG_KSU=' out/.config || true
-
-          echo "===== Final KPROBES configuration ====="
-          grep -E '^CONFIG_(KPROBES|HAVE_KPROBES|KPROBE_EVENTS)=' \
-            out/.config || true
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_KPROBES=y' out/.config
+          grep -qx 'CONFIG_KPROBE_EVENTS=y' out/.config
 
       - name: Build kernel
-        working-directory: kernel
         run: |
-          set -euxo pipefail
+          set -eux
+          cd kernel
 
           export ARCH=arm64
-          export KBUILD_OUTPUT="$PWD/out"
-          export PATH="$PWD/toolchain/clang/bin:$PATH"
+          export SUBARCH=arm64
+          export CROSS_COMPILE="$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-"
+          export CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-"
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CC="$GITHUB_WORKSPACE/clang/bin/clang"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
 
-          make -j$(nproc) \
+          make -j"$(nproc)" \
+            O=out \
             ARCH=arm64 \
-            KBUILD_OUTPUT="$PWD/out" \
-            KCONFIG_CONFIG="$PWD/out/.config" \
             CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE="$PWD/toolchain/gcc64/bin/aarch64-linux-android-" \
-            CROSS_COMPILE_ARM32="$PWD/toolchain/gcc32/bin/arm-linux-androideabi-" \
-            CONFIG_NO_ERROR_ON_MISMATCH=y \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
             Image.gz-dtb
 
-      - name: Check output
-        working-directory: kernel
+          test -f out/arch/arm64/boot/Image.gz
+          test -f out/arch/arm64/boot/Image.gz-dtb
+
+          echo "===== KERNEL OUTPUTS ====="
+          ls -lh out/arch/arm64/boot/Image.gz*
+          file out/arch/arm64/boot/Image.gz
+          file out/arch/arm64/boot/Image.gz-dtb
+          gzip -t out/arch/arm64/boot/Image.gz
+          sha256sum out/arch/arm64/boot/Image.gz*
+
+      - name: Download original boot image
+        run: |
+          set -eux
+          mkdir -p original
+          curl -fL \
+            "https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img" \
+            -o original/boot.img
+
+          test "$(stat -c%s original/boot.img)" -eq 33554432
+          file original/boot.img
+          sha256sum original/boot.img
+
+      - name: Build MagiskBoot
         run: |
           set -eux
 
-          ls -lh out/arch/arm64/boot/
+          git clone --depth=1 --recurse-submodules \
+            https://github.com/topjohnwu/Magisk.git magisk-source
 
-          file out/arch/arm64/boot/Image.gz-dtb
+          cd magisk-source
+          git submodule update --init --recursive
 
-          echo "===== Kernel size ====="
-          stat -c "%s bytes" out/arch/arm64/boot/Image.gz-dtb
+          test -f native/src/external/cxx-rs/Cargo.toml
 
-      - name: Upload kernel
+          python3 build.py ndk
+          python3 build.py native magiskboot
+
+          cd "$GITHUB_WORKSPACE"
+
+          MAGISKBOOT="$(find magisk-source -type f -name magiskboot \
+            -exec sh -c 'file "$1" | grep -q "ELF 64-bit.*x86-64" && echo "$1"' _ {} \; \
+            | head -n 1)"
+
+          test -n "$MAGISKBOOT"
+          install -m 755 "$MAGISKBOOT" ./magiskboot
+          file ./magiskboot
+
+      - name: Repack test boot with original DTB
+        run: |
+          set -eux
+
+          mkdir -p unpack newkernel artifacts
+
+          ./magiskboot unpack original/boot.img
+          test -f kernel
+          test -f kernel_dtb
+
+          cp kernel unpack/kernel
+          cp kernel_dtb unpack/kernel_dtb
+          cp ramdisk.cpio unpack/ramdisk.cpio
+
+          echo "===== ORIGINAL UNPACKED FILES ====="
+          ls -lh unpack/
+
+          # Diagnostic build: replace the kernel while retaining the
+          # original DTB and ramdisk from the stock ROM boot image.
+          cp kernel/out/arch/arm64/boot/Image.gz newkernel/kernel.gz
+          gzip -t newkernel/kernel.gz
+          cp newkernel/kernel.gz unpack/kernel
+
+          echo "===== REPACK ====="
+          ./magiskboot repack original/boot.img artifacts/RMX1821-KernelSU-v0.9.5-test.img
+
+          test -s artifacts/RMX1821-KernelSU-v0.9.5-test.img
+          test "$(stat -c%s artifacts/RMX1821-KernelSU-v0.9.5-test.img)" -eq 33554432
+
+          file artifacts/RMX1821-KernelSU-v0.9.5-test.img
+          sha256sum artifacts/RMX1821-KernelSU-v0.9.5-test.img
+
+      - name: Copy kernel build artifact
+        run: |
+          set -eux
+          cp kernel/out/arch/arm64/boot/Image.gz-dtb \
+            artifacts/Image.gz-dtb
+          cp kernel/out/.config artifacts/kernel.config
+          ls -lh artifacts/
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: RMX1821-KernelSU-v2
-          path: kernel/out/arch/arm64/boot/Image.gz-dtb
+          name: RMX1821-KernelSU-v0.9.5-test
+          path: artifacts/*
           if-no-files-found: error
