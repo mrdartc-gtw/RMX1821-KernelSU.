@@ -251,7 +251,7 @@ jobs:
 
           MAGISK_VERSION="v30.7"
 
-          echo "===== Download Magisk ${MAGISK_VERSION} ====="
+          echo "===== Download Magisk APK ====="
 
           wget \
             --retry-connrefused \
@@ -260,50 +260,60 @@ jobs:
             -O magisk.apk \
             "https://github.com/topjohnwu/Magisk/releases/download/${MAGISK_VERSION}/Magisk-${MAGISK_VERSION}.apk"
 
-          echo "===== Verify download ====="
+          test -s magisk.apk
 
-          ls -lh magisk.apk
+          echo "===== Verify APK ====="
           file magisk.apk
-
-          echo "===== SHA256 ====="
+          ls -lh magisk.apk
           sha256sum magisk.apk
+
+          echo "===== APK contents ====="
+
+          unzip -l magisk.apk > magisk-apk-list.txt
+
+          grep -Ei 'magiskboot|boot' magisk-apk-list.txt || true
 
           echo "===== Extract APK ====="
 
-          unzip -l magisk.apk | grep -E 'magiskboot|libmagisk'
-
           unzip -q magisk.apk -d magisk/apk
 
-          echo "===== Search magiskboot ====="
+          echo "===== Search for MagiskBoot ====="
 
-          find magisk/apk -type f | grep -E 'magiskboot|libmagisk' || true
+          find magisk/apk -type f \
+            \( -iname '*magiskboot*' -o -iname '*boot*' \) \
+            -print || true
 
-          echo "===== Locate magiskboot ====="
+          echo "===== Complete extracted file list ====="
 
-          MAGISKBOOT=$(find magisk/apk -type f -name 'magiskboot' | head -n 1)
+          find magisk/apk -type f | sort > magisk-files.txt
 
-          if [ -z "$MAGISKBOOT" ]; then
-            echo "magiskboot binary not found in APK."
-            echo "Contents:"
-            find magisk/apk -type f
+          cat magisk-files.txt
+
+          echo "===== Search standalone magiskboot ====="
+
+          MAGISKBOOT=$(find magisk/apk \
+            -type f \
+            -name 'magiskboot' \
+            | head -n 1 || true)
+
+          if [ -n "$MAGISKBOOT" ]; then
+            echo "Found standalone magiskboot:"
+            echo "$MAGISKBOOT"
+
+            cp "$MAGISKBOOT" ./magiskboot
+            chmod +x ./magiskboot
+
+            file ./magiskboot
+            ./magiskboot --help || true
+
+          else
+            echo "ERROR: standalone magiskboot was not found in Magisk APK."
+            echo
+            echo "APK file list:"
+            cat magisk-files.txt
             exit 1
           fi
-
-          echo "Found:"
-          echo "$MAGISKBOOT"
-
-          cp "$MAGISKBOOT" magisk/magiskboot
-          chmod +x magisk/magiskboot
-
-          echo "===== magiskboot ====="
-
-          file magisk/magiskboot
-          ls -lh magisk/magiskboot
-
-          echo "===== Test magiskboot ====="
-
-          ./magisk/magiskboot --help || true 
-
+ 
       # ============================================================
       # 14. DOWNLOAD ORIGINAL BOOT FROM RELEASE
       # ============================================================
