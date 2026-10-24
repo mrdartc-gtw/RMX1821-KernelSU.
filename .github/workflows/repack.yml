@@ -240,41 +240,70 @@ jobs:
           if-no-files-found: error
 
       # ============================================================
-      # DOWNLOAD MAGISKBOOT
+      # 13. DOWNLOAD MAGISKBOOT
       # ============================================================
       - name: Download Magisk tools
         run: |
           set -eux
 
+          rm -rf magisk
           mkdir -p magisk
 
           MAGISK_VERSION="v30.7"
+
+          echo "===== Download Magisk ${MAGISK_VERSION} ====="
 
           wget \
             --retry-connrefused \
             --tries=5 \
             --timeout=30 \
-            -O magisk.zip \
+            -O magisk.apk \
             "https://github.com/topjohnwu/Magisk/releases/download/${MAGISK_VERSION}/Magisk-${MAGISK_VERSION}.apk"
 
-          echo "===== Downloaded Magisk ====="
-          ls -lh magisk.zip
+          echo "===== Verify download ====="
 
-          echo "===== Extract magiskboot ====="
+          ls -lh magisk.apk
+          file magisk.apk
 
-          unzip -j magisk.zip \
-            "lib/arm64-v8a/libmagiskboot.so" \
-            -d magisk
+          echo "===== SHA256 ====="
+          sha256sum magisk.apk
 
-          mv magisk/libmagiskboot.so magisk/magiskboot
+          echo "===== Extract APK ====="
 
+          unzip -l magisk.apk | grep -E 'magiskboot|libmagisk'
+
+          unzip -q magisk.apk -d magisk/apk
+
+          echo "===== Search magiskboot ====="
+
+          find magisk/apk -type f | grep -E 'magiskboot|libmagisk' || true
+
+          echo "===== Locate magiskboot ====="
+
+          MAGISKBOOT=$(find magisk/apk -type f -name 'magiskboot' | head -n 1)
+
+          if [ -z "$MAGISKBOOT" ]; then
+            echo "magiskboot binary not found in APK."
+            echo "Contents:"
+            find magisk/apk -type f
+            exit 1
+          fi
+
+          echo "Found:"
+          echo "$MAGISKBOOT"
+
+          cp "$MAGISKBOOT" magisk/magiskboot
           chmod +x magisk/magiskboot
 
           echo "===== magiskboot ====="
+
           file magisk/magiskboot
           ls -lh magisk/magiskboot
 
-          ./magisk/magiskboot --help || true
+          echo "===== Test magiskboot ====="
+
+          ./magisk/magiskboot --help || true 
+
       # ============================================================
       # 14. DOWNLOAD ORIGINAL BOOT FROM RELEASE
       # ============================================================
