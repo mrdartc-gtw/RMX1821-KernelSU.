@@ -168,7 +168,7 @@ jobs:
 
           curl -LSs \
             https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh \
-            | bash -
+            | bash -s -- v0.9.5
 
           echo "===== KernelSU directory ====="
 
@@ -178,14 +178,27 @@ jobs:
 
           echo "===== KernelSU version ====="
 
-          git -C KernelSU describe --tags --always || true
+          git -C KernelSU describe --tags --always
 
-          echo "===== Check KernelSU source ====="
+          echo "===== Verify exact version ====="
 
-          test -f KernelSU/Kconfig
-          test -f KernelSU/Makefile
+          test "$(git -C KernelSU describe --tags --exact-match)" = "v0.9.5"
 
-          echo "KernelSU source detected."
+          echo "KernelSU v0.9.5 confirmed."
+
+          echo "===== Check KernelSU integration ====="
+
+          test -L drivers/kernelsu
+
+          test -f drivers/kernelsu/Kconfig
+
+          test -f drivers/kernelsu/Makefile
+
+          echo "KernelSU integration detected."
+
+          echo "===== Integration ====="
+
+          ls -lah drivers/kernelsu
 
 
       # ============================================================
@@ -206,20 +219,16 @@ jobs:
 
           export CLANG_TRIPLE=aarch64-linux-gnu-
 
-          echo "============================================================"
-          echo "TOOLCHAIN"
-          echo "============================================================"
+          echo "===== Toolchain ====="
 
           clang --version
-
           aarch64-linux-android-gcc --version
-
           arm-linux-androideabi-gcc --version
 
+          echo "===== KernelSU Kconfig ====="
 
-          echo "============================================================"
-          echo "CHECK KERNELSU KCONFIG"
-          echo "============================================================"
+          test -f drivers/kernelsu/Kconfig
+          test -f drivers/kernelsu/Makefile
 
           grep -Rni \
             "config KSU" \
@@ -227,67 +236,40 @@ jobs:
             --include='Kconfig*' \
             || true
 
-          echo "===== KernelSU Kconfig ====="
-
-          test -f drivers/kernelsu/Kconfig
-
-          grep -n "config KSU" drivers/kernelsu/Kconfig
-
-
-          echo "============================================================"
-          echo "DEFCONFIG"
-          echo "============================================================"
+          echo "===== Defconfig ====="
 
           make O=out RMX1821_defconfig
 
-
-          echo "============================================================"
-          echo "ENABLE KERNELSU"
-          echo "============================================================"
+          echo "===== Enable KernelSU ====="
 
           ./scripts/config \
             --file out/.config \
             --enable CONFIG_KSU
 
-
-          echo "============================================================"
-          echo "ENABLE KPROBES"
-          echo "============================================================"
+          echo "===== Enable KPROBES ====="
 
           ./scripts/config \
             --file out/.config \
             --enable CONFIG_KPROBES
 
-
-          echo "============================================================"
-          echo "ENABLE KPROBE EVENTS"
-          echo "============================================================"
+          echo "===== Enable KPROBE EVENTS ====="
 
           ./scripts/config \
             --file out/.config \
             --enable CONFIG_KPROBE_EVENTS
 
-
-          echo "============================================================"
-          echo "CONFIGURATION BEFORE OLDDEFCONFIG"
-          echo "============================================================"
+          echo "===== BEFORE olddefconfig ====="
 
           grep -E \
             '^(CONFIG_KSU|CONFIG_KPROBES|CONFIG_KPROBE_EVENTS|CONFIG_HAVE_KPROBES)=' \
             out/.config \
             || true
 
-
-          echo "============================================================"
-          echo "OLDDEFCONFIG"
-          echo "============================================================"
+          echo "===== olddefconfig ====="
 
           make O=out olddefconfig
 
-
-          echo "============================================================"
-          echo "CONFIGURATION AFTER OLDDEFCONFIG"
-          echo "============================================================"
+          echo "===== AFTER olddefconfig ====="
 
           grep -E \
             '^(CONFIG_KSU|CONFIG_KPROBES|CONFIG_KPROBE_EVENTS|CONFIG_HAVE_KPROBES)=' \
