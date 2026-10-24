@@ -1,4 +1,4 @@
-name: Repack RMX1821 KernelSU Boot
+name: Repack RMX1821 KernelSU v2
 
 on:
   workflow_dispatch:
@@ -29,20 +29,23 @@ jobs:
 
           curl -L \
             --fail \
+            --retry 5 \
+            --retry-delay 5 \
             -o original/boot.img \
             "https://github.com/${GITHUB_REPOSITORY}/releases/download/boot-original/boot.img"
 
+          echo "===== Original boot ====="
           ls -lh original/boot.img
           file original/boot.img
 
-      - name: Download KernelSU artifact
+      - name: Download KernelSU v2 artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p kernel-artifact
 
           RUN_ID=$(gh run list \
-            --workflow "Build RMX1821 KernelSU" \
+            --workflow "Build RMX1821 KernelSU v2" \
             --repo "${GITHUB_REPOSITORY}" \
             --status completed \
             --limit 20 \
@@ -51,114 +54,15 @@ jobs:
             | head -n 1)
 
           if [ -z "$RUN_ID" ]; then
-            echo "Build KernelSU berhasil tidak ditemukan."
+            echo "Build KernelSU v2 berhasil tidak ditemukan."
             exit 1
           fi
 
-          echo "KernelSU workflow run: $RUN_ID"
+          echo "KernelSU v2 workflow run: $RUN_ID"
 
           gh run download "$RUN_ID" \
             --repo "${GITHUB_REPOSITORY}" \
-            --name RMX1821-KernelSU \
+            --name RMX1821-KernelSU-v2 \
             --dir kernel-artifact
 
-          find kernel-artifact -type f -ls
-
-      - name: Prepare Image.gz-dtb
-        run: |
-          IMAGE=$(find kernel-artifact -name "Image.gz-dtb" | head -n 1)
-
-          if [ -z "$IMAGE" ]; then
-            echo "Image.gz-dtb tidak ditemukan."
-            exit 1
-          fi
-
-          cp "$IMAGE" Image.gz-dtb
-
-          ls -lh Image.gz-dtb
-          file Image.gz-dtb
-
-      - name: Download latest Magisk
-        run: |
-          mkdir -p magisk
-
-          curl -L \
-            --fail \
-            https://api.github.com/repos/topjohnwu/Magisk/releases/latest \
-            -o magisk-release.json
-
-          APK_URL=$(jq -r '
-            .assets[]
-            | select(.name | endswith(".apk"))
-            | .browser_download_url
-          ' magisk-release.json | head -n 1)
-
-          if [ -z "$APK_URL" ] || [ "$APK_URL" = "null" ]; then
-            echo "Magisk APK tidak ditemukan."
-            exit 1
-          fi
-
-          curl -L \
-            --fail \
-            "$APK_URL" \
-            -o magisk.apk
-
-          unzip -j magisk.apk \
-            "lib/x86_64/libmagiskboot.so" \
-            -d magisk
-
-          mv magisk/libmagiskboot.so magisk/magiskboot
-          chmod +x magisk/magiskboot
-      - name: Unpack original boot.img
-        run: |
-          mkdir -p unpack
-          cp original/boot.img unpack/boot.img
-
-          cd unpack
-          ../magisk/magiskboot unpack boot.img
-
-          echo "===== Boot image contents ====="
-          ls -lah
-
-      - name: Replace kernel
-        run: |
-          test -f unpack/kernel
-
-          cp Image.gz-dtb unpack/kernel
-
-          echo "===== New kernel ====="
-          ls -lh unpack/kernel
-          file unpack/kernel
-
-      - name: Repack boot.img
-        run: |
-          cd unpack
-
-          ../magisk/magiskboot repack \
-            boot.img \
-            ../boot-kernelsu.img
-
-          cd ..
-
-          test -f boot-kernelsu.img
-
-          echo "===== Final boot image ====="
-          ls -lh boot-kernelsu.img
-          file boot-kernelsu.img
-
-      - name: Verify final boot image
-        run: |
-          mkdir -p verify
-
-          ./magisk/magiskboot unpack \
-            boot-kernelsu.img
-
-          echo "===== Verification ====="
-          ls -lah
-
-      - name: Upload KernelSU boot image
-        uses: actions/upload-artifact@v4
-        with:
-          name: RMX1821-KernelSU-Boot
-          path: boot-kernelsu.img
-          if-no-files-found: error
+          echo "===== Artifact =====
