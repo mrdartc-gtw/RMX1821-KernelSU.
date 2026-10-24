@@ -1,4 +1,4 @@
-name: Build RMX1821 KernelSU
+name: Build RMX1821 KernelSU v2
 
 on:
   workflow_dispatch:
@@ -31,8 +31,6 @@ jobs:
 
           sudo ln -sf /usr/bin/python2 /usr/local/bin/python
 
-          echo "===== Python ====="
-          /usr/bin/python2 --version
           python --version
 
       - name: Download kernel source
@@ -47,17 +45,12 @@ jobs:
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821/archive/refs/heads/Q.tar.gz
 
           tar -xzf kernel.tar.gz
-
           mv CosmicFresh-RMX1821-Q kernel
 
           test -f kernel/tools/dct/DrvGen.py
           chmod +x kernel/tools/dct/DrvGen.py
 
-          echo "===== Kernel source ====="
           du -sh kernel
-
-          echo "===== DrvGen.py ====="
-          head -n 1 kernel/tools/dct/DrvGen.py
 
       - name: Download Android toolchains
         working-directory: kernel
@@ -77,7 +70,7 @@ jobs:
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
             gcc32
 
-      - name: Integrate KernelSU v0.9.5
+      - name: Integrate KernelSU
         working-directory: kernel
         run: |
           curl -LSs \
@@ -91,43 +84,42 @@ jobs:
 
           export ARCH=arm64
           export KBUILD_OUTPUT="$PWD/out"
+          export KCONFIG_CONFIG="$PWD/out/.config"
 
+          rm -rf out
           rm -f .config
           rm -rf include/config
 
-          echo "===== Creating base config ====="
+          echo "===== Base config ====="
           make RMX1821_defconfig
 
-          echo "===== Checking generated config ====="
           test -f out/.config
-          ls -lh out/.config
 
-          echo "===== Enabling KernelSU/KPROBE ====="
-          ./scripts/config --file out/.config --enable CONFIG_KPROBES
-          ./scripts/config --file out/.config --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file out/.config --enable CONFIG_KPROBE_EVENTS
-          ./scripts/config --file out/.config --enable CONFIG_KSU
+          echo "===== KernelSU configuration ====="
 
-          echo "===== Running olddefconfig ====="
-          KCONFIG_CONFIG="$PWD/out/.config" make olddefconfig
+          ./scripts/config \
+            --file out/.config \
+            --enable CONFIG_KSU
 
-          echo "===== Final config ====="
-          ls -lh out/.config
+          echo "===== Existing KPROBES configuration ====="
+          grep -E '^CONFIG_(KPROBES|HAVE_KPROBES|KPROBE_EVENTS)=' \
+            out/.config || true
 
-          echo "===== KernelSU/KPROBE status ====="
-          grep -E '^CONFIG_(KSU|KPROBES|HAVE_KPROBES|KPROBE_EVENTS)=' out/.config || true
+          echo "===== olddefconfig ====="
+          make olddefconfig
 
-          echo "===== Source tree ====="
-          if [ -f .config ]; then
-            echo "ERROR: source .config exists"
-            exit 1
-          fi
+          echo "===== Final KernelSU configuration ====="
+          grep -E '^CONFIG_KSU=' out/.config || true
 
-          echo "Source .config: OK"
- 
+          echo "===== Final KPROBES configuration ====="
+          grep -E '^CONFIG_(KPROBES|HAVE_KPROBES|KPROBE_EVENTS)=' \
+            out/.config || true
+
       - name: Build kernel
         working-directory: kernel
         run: |
+          set -euxo pipefail
+
           export ARCH=arm64
           export KBUILD_OUTPUT="$PWD/out"
           export PATH="$PWD/toolchain/clang/bin:$PATH"
@@ -146,11 +138,18 @@ jobs:
       - name: Check output
         working-directory: kernel
         run: |
+          set -eux
+
           ls -lh out/arch/arm64/boot/
+
           file out/arch/arm64/boot/Image.gz-dtb
+
+          echo "===== Kernel size ====="
+          stat -c "%s bytes" out/arch/arm64/boot/Image.gz-dtb
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: RMX1821-KernelSU
+          name: RMX1821-KernelSU-v2
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
+          if-no-files-found: error
