@@ -45,7 +45,8 @@ jobs:
             rsync \
             clang \
             cmake \
-            ninja-build
+            ninja-build \
+            binutils
 
           echo "===== Python 2 ====="
           which python2
@@ -92,10 +93,8 @@ jobs:
 
           head -n 1 tools/dct/DrvGen.py || true
 
-          # Remove CRLF
           sed -i 's/\r$//' tools/dct/DrvGen.py
 
-          # Force Python 2
           sed -i '1c\#!/usr/bin/env python2' tools/dct/DrvGen.py
 
           chmod +x tools/dct/DrvGen.py
@@ -278,292 +277,35 @@ jobs:
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: error
 
-      # ============================================================
-      # 13. DOWNLOAD AND PREPARE MAGISK SOURCE
-      # ============================================================
-- name: Prepare Magisk source
-  run: |
-    set -eux
-
-    rm -rf magisk-source
-    rm -f magiskboot
-
-    git clone \
-      --depth=1 \
-      --recurse-submodules \
-      https://github.com/topjohnwu/Magisk.git \
-      magisk-source
-
-    cd magisk-source
-
-    git submodule update --init --recursive
-
-    echo "===== Magisk commit ====="
-    git rev-parse HEAD
-
-    echo "===== Submodules ====="
-    git submodule status
-
-    echo "===== cxx-rs ====="
-    test -f native/src/external/cxx-rs/Cargo.toml
-
-    echo "===== Build help ====="
-    python3 build.py --help
-
-    echo "===== Build NDK ====="
-    python3 build.py ndk
-
-    echo "===== Build magiskboot ====="
-    python3 build.py native magiskboot
-
-    echo "===== Search magiskboot ====="
-    find . -type f -name magiskboot -print
-
-    echo "===== Check candidates ====="
-    while IFS= read -r f; do
-      echo "----- $f -----"
-      file "$f" || true
-      ls -lh "$f" || true
-    done < <(find . -type f -name magiskboot)
-
-    echo "===== Select Linux x86_64 executable ====="
-
-    MAGISKBOOT=""
-
-    while IFS= read -r f; do
-      if file "$f" | grep -Eq 'ELF 64-bit.*x86-64'; then
-        if file "$f" | grep -q 'executable'; then
-          MAGISKBOOT="$f"
-          break
-        fi
-      fi
-    done < <(find . -type f -name magiskboot)
-
-    if [ -z "$MAGISKBOOT" ]; then
-      echo "ERROR: Linux x86_64 executable magiskboot was not found."
-      echo
-      echo "All magiskboot candidates:"
-      find . -type f -name magiskboot -exec file {} \;
-      exit 1
-    fi
-
-    echo "Selected:"
-    echo "$MAGISKBOOT"
-
-    file "$MAGISKBOOT"
-    ls -lh "$MAGISKBOOT"
-
-    cp "$MAGISKBOOT" "$GITHUB_WORKSPACE/magiskboot"
-
-    chmod +x "$GITHUB_WORKSPACE/magiskboot"
-
-    echo "===== Final magiskboot ====="
-    file "$GITHUB_WORKSPACE/magiskboot"
-    ls -lh "$GITHUB_WORKSPACE/magiskboot"
 
       # ============================================================
-      # 14. VERIFY MAGISKBOOT
-      # =========================================================== - name: Verify MagiskBoot architecture
-  run: |
-    set -eux
-
-    test -f "$GITHUB_WORKSPACE/magiskboot"
-
-    chmod +x "$GITHUB_WORKSPACE/magiskboot"
-
-    echo "===== File ====="
-    file "$GITHUB_WORKSPACE/magiskboot"
-
-    echo "===== Architecture ====="
-    readelf -h "$GITHUB_WORKSPACE/magiskboot" | grep -E 'Class|Data|Machine|Type'
-
-    echo "===== Permissions ====="
-    ls -lh "$GITHUB_WORKSPACE/magiskboot"
-
-    echo "===== Execute test ====="
-    "$GITHUB_WORKSPACE/magiskboot" --help || true
-
-    echo "===== Version test ====="
-    "$GITHUB_WORKSPACE/magiskboot" version || true
-
+      # 13. PREPARE MAGISK SOURCE
       # ============================================================
-      # 15. DOWNLOAD ORIGINAL BOOT
-      # ============================================================
-      - name: Download original boot
+      - name: Prepare Magisk source
         run: |
           set -eux
 
-          mkdir -p original
+          rm -rf magisk-source
+          rm -f magiskboot
 
-          wget \
-            --retry-connrefused \
-            --tries=5 \
-            --timeout=30 \
-            -O original/boot.img \
-            https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img
+          git clone \
+            --depth=1 \
+            --recurse-submodules \
+            https://github.com/topjohnwu/Magisk.git \
+            magisk-source
 
-          test -s original/boot.img
+          cd magisk-source
 
-          echo "===== Original boot ====="
+          git submodule update --init --recursive
 
-          ls -lh original/boot.img
+          echo "===== Magisk commit ====="
 
-          echo "===== SHA256 ====="
+          git rev-parse HEAD
 
-          sha256sum original/boot.img
+          echo "===== Submodules ====="
 
-          echo "===== Size ====="
+          git submodule status
 
-          stat -c%s original/boot.img
+          echo "===== cxx-rs ====="
 
-          echo "===== File ====="
-
-          file original/boot.img
-
-
-      # ============================================================
-      # 16. UNPACK ORIGINAL BOOT
-      # ============================================================
-      - name: Unpack original boot
-  run: |
-    set -eux
-
-    rm -rf unpack
-    mkdir -p unpack
-
-    cp original/boot.img unpack/boot.img
-
-    cd unpack
-
-    "$GITHUB_WORKSPACE/magiskboot" unpack boot.img
-
-    echo "===== UNPACK RESULT ====="
-    ls -lah
-
-    echo "===== Boot files ====="
-
-    for f in kernel kernel_dtb dtb ramdisk.cpio ramdisk.cpio.gz second extra recovery_dtbo; do
-      if [ -f "$f" ]; then
-        echo "FOUND: $f"
-        file "$f"
-        stat -c "%n %s bytes" "$f"
-      else
-        echo "NOT FOUND: $f"
-      fi
-    done
-
-      # ============================================================
-      # 17. PREPARE KERNEL
-      # ============================================================
-      - name: Prepare KernelSU kernel
-        working-directory: kernel
-        run: |
-          set -eux
-
-          mkdir -p "$GITHUB_WORKSPACE/repack"
-
-          cp \
-            out/arch/arm64/boot/Image.gz-dtb \
-            "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
-
-          echo "===== New kernel ====="
-
-          ls -lh "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
-
-          file "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
-
-          sha256sum "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
-
-          stat -c%s "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
-
-
-      # ============================================================
-      # 18. DETECT BOOT STRUCTURE
-      # ============================================================
-      - name: Detect boot structure
-        run: |
-          set -eux
-
-          echo "===== Original boot structure ====="
-
-          if [ -f unpack/kernel ]; then
-            echo "kernel: YES"
-            file unpack/kernel
-            stat -c%s unpack/kernel
-          else
-            echo "kernel: NO"
-          fi
-
-          if [ -f unpack/kernel_dtb ]; then
-            echo "kernel_dtb: YES"
-            file unpack/kernel_dtb
-            stat -c%s unpack/kernel_dtb
-          else
-            echo "kernel_dtb: NO"
-          fi
-
-          if [ -f unpack/dtb ]; then
-            echo "dtb: YES"
-            file unpack/dtb
-            stat -c%s unpack/dtb
-          else
-            echo "dtb: NO"
-          fi
-
-          echo "===== Header ====="
-
-          if [ -f unpack/header ]; then
-            cat unpack/header
-          else
-            echo "header file not generated"
-          fi
-
-
-      # ============================================================
-      # 19. PREPARE NEW KERNEL / DTB
-      # ============================================================
-      - name: Prepare kernel replacement
-        run: |
-          set -eux
-
-          IMAGE="$GITHUB_WORKSPACE/repack/Image.gz-dtb"
-
-          echo "===== New Image.gz-dtb ====="
-
-          file "$IMAGE"
-
-          stat -c%s "$IMAGE"
-
-          echo "===== Check appended DTB ====="
-
-          python3 - "$IMAGE" <<'PY'
-          import sys
-          import struct
-
-          path = sys.argv[1]
-
-          with open(path, "rb") as f:
-              data = f.read()
-
-          magic = b"\xd0\x0d\xfe\xed"
-
-          print("Image size:", len(data))
-
-          found = []
-
-          pos = 0
-
-          while True:
-              pos = data.find(magic, pos)
-
-              if pos == -1:
-                  break
-
-              if pos + 8 <= len(data):
-
-                  totalsize = struct.unpack(
-                      ">I",
-                      data[pos + 4:pos + 8]
-                  )[0]
-
-                  if totalsize > 0 and
+          test -f
