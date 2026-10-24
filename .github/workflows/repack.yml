@@ -240,7 +240,7 @@ jobs:
           if-no-files-found: error
 
       # ============================================================
-      # 13. DOWNLOAD MAGISKBOOT
+      # DOWNLOAD MAGISKBOOT
       # ============================================================
       - name: Download Magisk tools
         run: |
@@ -248,22 +248,33 @@ jobs:
 
           mkdir -p magisk
 
-          wget -O magisk.zip \
-            https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.zip
+          MAGISK_VERSION="v30.7"
 
-          unzip -o magisk.zip -d magisk
+          wget \
+            --retry-connrefused \
+            --tries=5 \
+            --timeout=30 \
+            -O magisk.zip \
+            "https://github.com/topjohnwu/Magisk/releases/download/${MAGISK_VERSION}/Magisk-${MAGISK_VERSION}.apk"
 
-          find magisk -type f -name "magiskboot" -print
+          echo "===== Downloaded Magisk ====="
+          ls -lh magisk.zip
 
-          MAGISKBOOT=$(find magisk -type f -name "magiskboot" | head -n 1)
+          echo "===== Extract magiskboot ====="
 
-          test -n "$MAGISKBOOT"
+          unzip -j magisk.zip \
+            "lib/arm64-v8a/libmagiskboot.so" \
+            -d magisk
 
-          cp "$MAGISKBOOT" ./magiskboot
-          chmod +x ./magiskboot
+          mv magisk/libmagiskboot.so magisk/magiskboot
 
-          ./magiskboot --help || true
+          chmod +x magisk/magiskboot
 
+          echo "===== magiskboot ====="
+          file magisk/magiskboot
+          ls -lh magisk/magiskboot
+
+          ./magisk/magiskboot --help || true
       # ============================================================
       # 14. DOWNLOAD ORIGINAL BOOT FROM RELEASE
       # ============================================================
