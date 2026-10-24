@@ -291,29 +291,60 @@ jobs:
 
           echo "===== Search standalone magiskboot ====="
 
-          MAGISKBOOT=$(find magisk/apk \
-            -type f \
-            -name 'magiskboot' \
-            | head -n 1 || true)
+echo "===== Search for MagiskBoot ====="
 
-          if [ -n "$MAGISKBOOT" ]; then
-            echo "Found standalone magiskboot:"
-            echo "$MAGISKBOOT"
+find magisk/apk -type f \
+  \( -iname '*magiskboot*' -o -iname '*boot*' \) \
+  -print || true
 
-            cp "$MAGISKBOOT" ./magiskboot
-            chmod +x ./magiskboot
+echo "===== Complete extracted file list ====="
 
-            file ./magiskboot
-            ./magiskboot --help || true
+find magisk/apk -type f | sort > magisk-files.txt
 
-          else
-            echo "ERROR: standalone magiskboot was not found in Magisk APK."
-            echo
-            echo "APK file list:"
-            cat magisk-files.txt
-            exit 1
-          fi
- 
+cat magisk-files.txt
+
+echo "===== Search possible Magisk binaries ====="
+
+find magisk/apk -type f -exec file {} \; \
+  | grep -Ei 'ELF|executable|shared object' \
+  || true
+
+echo "===== Search magiskboot ====="
+
+MAGISKBOOT=$(find magisk/apk \
+  -type f \
+  \( -name 'magiskboot' -o -name '*magiskboot*' \) \
+  | head -n 1 || true)
+
+if [ -n "$MAGISKBOOT" ]; then
+  echo "Found possible MagiskBoot:"
+  echo "$MAGISKBOOT"
+
+  file "$MAGISKBOOT"
+
+  cp "$MAGISKBOOT" ./magiskboot
+  chmod +x ./magiskboot
+
+  echo "===== Test magiskboot ====="
+
+  file ./magiskboot
+  ./magiskboot --help || true
+
+else
+  echo "ERROR: MagiskBoot binary was not found."
+  echo
+  echo "===== APK FILE LIST ====="
+  cat magisk-files.txt
+  echo
+  echo "===== ELF FILES ====="
+
+  find magisk/apk -type f -exec file {} \; \
+    | grep -Ei 'ELF|executable|shared object' \
+    || true
+
+  exit 1
+fi 
+
       # ============================================================
       # 14. DOWNLOAD ORIGINAL BOOT FROM RELEASE
       # ============================================================
