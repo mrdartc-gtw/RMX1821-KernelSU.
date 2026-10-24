@@ -27,19 +27,13 @@ jobs:
             git \
             libelf-dev \
             libssl-dev \
-            python2 \
-            python2-minimal \
             unzip \
             zip \
             jq \
             file
 
-          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
-
       - name: Download kernel source
         run: |
-          rm -rf kernel kernel.tar.gz
-
           curl -L --fail \
             --retry 5 \
             --retry-delay 5 \
@@ -47,12 +41,28 @@ jobs:
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821/archive/refs/heads/Q.tar.gz
 
           tar -xzf kernel.tar.gz
-
           mv CosmicFresh-RMX1821-Q kernel
 
           test -f kernel/tools/dct/DrvGen.py
-
           chmod +x kernel/tools/dct/DrvGen.py
+
+      - name: Setup Python 2
+        run: |
+          cd kernel
+
+          curl -L --fail \
+            https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer \
+            -o /tmp/pyenv-installer
+
+          git clone --depth=1 https://github.com/pyenv/pyenv.git ~/.pyenv
+
+          export PATH="$HOME/.pyenv/bin:$PATH"
+          eval "$(~/.pyenv/bin/pyenv init -)"
+
+          ~/.pyenv/bin/pyenv install -s 2.7.18
+          ~/.pyenv/bin/pyenv global 2.7.18
+
+          python --version
 
       - name: Download Android toolchains
         working-directory: kernel
@@ -99,7 +109,10 @@ jobs:
             --file out/.config \
             --enable CONFIG_KSU
 
-          KCONFIG_CONFIG="$PWD/out/.config" make olddefconfig
+          KCONFIG_CONFIG="$PWD/out/.config" \
+            make olddefconfig
+
+          grep CONFIG_KSU out/.config || true
 
       - name: Build kernel
         working-directory: kernel
@@ -109,15 +122,6 @@ jobs:
           export ARCH=arm64
           export KBUILD_OUTPUT="$PWD/out"
           export PATH="$PWD/toolchain/clang/bin:$PATH"
-
-          echo "===== Toolchain ====="
-          clang --version
-          python --version
-
-          echo "===== Kernel config ====="
-          grep -E '^CONFIG_KSU=' out/.config || true
-
-          echo "===== Starting kernel build ====="
 
           make -j$(nproc) \
             ARCH=arm64 \
@@ -130,9 +134,257 @@ jobs:
             CONFIG_NO_ERROR_ON_MISMATCH=y \
             Image.gz-dtb
 
-          echo "===== Build finished ====="
-
           test -s out/arch/arm64/boot/Image.gz-dtb
 
+          echo "===== BUILT KERNEL ====="
           ls -lh out/arch/arm64/boot/Image.gz-dtb
           file out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Copy built kernel
+        run: |
+          cp kernel/out/arch/arm64/boot/Image.gz-dtb .
+          test -s Image.gz-dtb
+
+          echo "===== Image.gz-dtb ====="
+          ls -lh Image.gz-dtb
+          file Image.gz-dtb
+
+      - name: Download original boot
+        run: |
+          mkdir -p original
+
+          curl -L --fail \
+            --retry 5 \
+            --retry-delay 5 \
+            -o original/boot.img \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/boot-original/boot.img"
+
+          test -s original/boot.img
+
+          echo "===== ORIGINAL BOOT ====="
+          ls -lh original/boot.img
+          file original/boot.img
+
+      - name: Download Magisk
+        run: |
+          mkdir -p magisk
+
+          curl -L --fail \
+            https://api.github.com/repos/topjohnwu/Magisk/releases/latest \
+            -o magisk-release.json
+
+          APK_URL=$(jq -r '
+            .assets[]
+            | select(.name | endswith(".apk"))
+            | .browser_download_url
+          ' magisk-release.json | head -n 1)
+
+          test -n "$APK_URL"
+          test "$APK_URL" != "null"
+
+          curl -L --fail \
+            "$APK_URL" \
+            -o magisk.apk
+
+          unzip -j magisk.apk \
+            "lib/x86_64/libmagiskboot.so" \
+            -d magisk
+
+          mv magisk/libmagiskboot.so magisk/magiskboot
+          chmod +x magisk/magiskboot
+
+      - name: Unpack original boot
+        run: |
+          mkdir -p unpack
+
+          cp original/boot.img unpack/boot.img
+
+          cd unpack
+          ../magisk/magiskboot unpack boot.img
+
+          echo "===== ORIGINAL STRUCTURE ====="
+          ls -lah
+
+          echo
+          echo "===== ORIGINAL KERNEL ====="
+          file kernel
+          stat -c "%s bytes" kernel
+
+          echo
+          echo "===== ORIGINAL DTB ====="
+          if [ -f dtb ]; then
+            file dtb
+            stat -c "%s bytes" dtb
+          else
+            echo "NO SEPARATE DTB"
+          fi
+
+      - name: Split KernelSU Image.gz-dtb
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import struct
+
+          src = Path("Image.gz-dtb").read_bytes()
+          magic = b"\xd0\x0d\xfe\xed"
+
+          candidates = []
+          pos = 0
+
+          while True:
+              pos = src.find(magic, pos)
+
+              if pos == -1:
+                  break
+
+              if pos + 8 <= len(src):
+                  size = struct.unpack(
+                      ">I",
+                      src[pos + 4:pos + 8]
+                  )[0]
+
+                  if size > 0 and pos + size == len(src):
+                      candidates.append((pos, size))
+
+              pos += 1
+
+          print("DTB candidates:", candidates)
+
+          if len(candidates) != 1:
+              raise SystemExit(
+                  "ERROR: tidak menemukan tepat satu DTB."
+              )
+
+          offset, size = candidates[0]
+
+          kernel = src[:offset]
+          dtb = src[offset:]
+
+          Path("kernel.gz").write_bytes(kernel)
+          Path("new.dtb").write_bytes(dtb)
+
+          print("Image.gz-dtb :", len(src), "bytes")
+          print("Kernel gzip  :", len(kernel), "bytes")
+          print("DTB          :", len(dtb), "bytes")
+          print("DTB offset   :", offset)
+
+          if not kernel.startswith(b"\x1f\x8b"):
+              raise SystemExit(
+                  "ERROR: kernel hasil split bukan gzip."
+              )
+
+          if dtb[:4] != magic:
+              raise SystemExit(
+                  "ERROR: DTB tidak valid."
+              )
+          PY
+
+          echo "===== SPLIT RESULT ====="
+          file kernel.gz
+          file new.dtb
+          stat -c "%n = %s bytes" kernel.gz new.dtb
+
+      - name: Replace kernel and DTB
+        run: |
+          test -f unpack/kernel
+          test -f unpack/dtb
+
+          cp kernel.gz unpack/kernel
+          cp new.dtb unpack/dtb
+
+          echo "===== NEW KERNEL ====="
+          file unpack/kernel
+          stat -c "%s bytes" unpack/kernel
+
+          echo
+          echo "===== NEW DTB ====="
+          file unpack/dtb
+          stat -c "%s bytes" unpack/dtb
+
+      - name: Repack boot
+        run: |
+          cd unpack
+
+          ../magisk/magiskboot repack \
+            boot.img \
+            ../boot-kernelsu-v4.img
+
+          cd ..
+
+          test -s boot-kernelsu-v4.img
+
+          echo "===== V4 BOOT ====="
+          ls -lh boot-kernelsu-v4.img
+          file boot-kernelsu-v4.img
+          sha256sum boot-kernelsu-v4.img
+
+      - name: Verify v4 boot
+        run: |
+          rm -rf verify
+          mkdir verify
+
+          cp boot-kernelsu-v4.img verify/boot.img
+
+          cd verify
+
+          ../magisk/magiskboot unpack boot.img
+
+          echo "===== FINAL STRUCTURE ====="
+          ls -lah
+
+          echo
+          echo "===== FINAL KERNEL ====="
+          file kernel
+          stat -c "%s bytes" kernel
+
+          echo
+          echo "===== FINAL DTB ====="
+          file dtb
+          stat -c "%s bytes" dtb
+
+      - name: Check duplicate DTB
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import struct
+
+          kernel = Path("verify/kernel").read_bytes()
+          dtb = Path("verify/dtb").read_bytes()
+
+          magic = b"\xd0\x0d\xfe\xed"
+
+          if magic in kernel:
+              raise SystemExit(
+                  "ERROR: kernel masih mengandung DTB."
+              )
+
+          if not dtb.startswith(magic):
+              raise SystemExit(
+                  "ERROR: DTB final tidak valid."
+              )
+
+          size = struct.unpack(
+              ">I",
+              dtb[4:8]
+          )[0]
+
+          if size != len(dtb):
+              raise SystemExit(
+                  f"ERROR: DTB size mismatch: "
+                  f"header={size}, actual={len(dtb)}"
+              )
+
+          print("================================")
+          print("DTB CHECK PASSED")
+          print("Kernel tidak mengandung DTB.")
+          print("DTB terpisah valid.")
+          print("================================")
+
+      - name: Upload KernelSU v4
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RMX1821-KernelSU-Boot-v4
+          path: boot-kernelsu-v4.img
+          if-no-files-found: error
+          retention-days: 7
