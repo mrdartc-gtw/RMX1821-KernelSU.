@@ -1,4 +1,4 @@
-name: Repack RMX1821 KernelSU v2
+name: Repack RMX1821 KernelSU v3
 
 on:
   workflow_dispatch:
@@ -18,16 +18,24 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl unzip jq
+          sudo apt-get install -y \
+            curl \
+            unzip \
+            jq \
+            file \
+            python3
 
       - name: Download original boot.img
         run: |
           mkdir -p original
 
           curl -L --fail \
+            --retry 5 \
+            --retry-delay 5 \
             -o original/boot.img \
             "https://github.com/${GITHUB_REPOSITORY}/releases/download/boot-original/boot.img"
 
+          echo "===== Original boot ====="
           ls -lh original/boot.img
           file original/boot.img
 
@@ -47,6 +55,13 @@ jobs:
 
           if [ -z "$ARTIFACT_ID" ]; then
             echo "KernelSU v2 artifact tidak ditemukan."
+            echo "===== Available artifacts ====="
+
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] |
+                "\(.id) \(.name) expired=\(.expired)"'
+
             exit 1
           fi
 
@@ -59,36 +74,26 @@ jobs:
           unzip -o kernel-artifact.zip \
             -d kernel-artifact
 
+          echo "===== Artifact contents ====="
           find kernel-artifact -type f -ls
 
-      - name: Split kernel and DTB
+      - name: Prepare Image.gz-dtb
         run: |
-          python3 - <<'PY'
-          import pathlib
-          import zlib
+          IMAGE=$(find kernel-artifact \
+            -type f \
+            -name "Image.gz-dtb" \
+            | head -n 1)
 
-          data = pathlib.Path("Image.gz-dtb").read_bytes()
+          if [ -z "$IMAGE" ]; then
+            echo "Image.gz-dtb tidak ditemukan."
+            exit 1
+          fi
 
-          decoder = zlib.decompressobj(31)
-          decoder.decompress(data)
+          cp "$IMAGE" Image.gz-dtb
 
-          if not decoder.eof:
-              raise SystemExit("ERROR: Kernel gzip tidak valid")
-
-          dtb = decoder.unused_data
-
-          if not dtb.startswith(bytes.fromhex("d00dfeed")):
-              raise SystemExit("ERROR: DTB tidak ditemukan")
-
-          kernel = data[:-len(dtb)]
-
-          pathlib.Path("kernel-only.gz").write_bytes(kernel)
-          pathlib.Path("embedded.dtb").write_bytes(dtb)
-
-          print("Kernel gzip:", len(kernel), "bytes")
-          print("DTB:", len(dtb), "bytes")
-          print("Kernel dan DTB berhasil dipisahkan")
-          PY
+          echo "===== KernelSU kernel ====="
+          ls -lh Image.gz-dtb
+          file Image.gz-dtb
 
       - name: Download Magisk
         run: |
@@ -103,6 +108,11 @@ jobs:
             | select(.name | endswith(".apk"))
             | .browser_download_url
           ' magisk-release.json | head -n 1)
+
+          if [ -z "$APK_URL" ] || [ "$APK_URL" = "null" ]; then
+            echo "Magisk APK tidak ditemukan."
+            exit 1
+          fi
 
           curl -L --fail \
             "$APK_URL" \
@@ -122,26 +132,46 @@ jobs:
           cp original/boot.img unpack/boot.img
 
           cd unpack
+
           ../magisk/magiskboot unpack boot.img
 
-          echo "===== Original boot ====="
+          echo "===== Original boot contents ====="
           ls -lah
 
-      - name: Replace kernel without duplicate DTB
+      - name: Inspect original boot components
+        run: |
+          echo "===== Original kernel ====="
+          file unpack/kernel
+          stat -c "%s bytes" unpack/kernel
+
+          echo "===== Original DTB ====="
+
+          if [ -f unpack/dtb ]; then
+            file unpack/dtb
+            stat -c "%s bytes" unpack/dtb
+          else
+            echo "No separate dtb file"
+          fi
+
+          echo "===== Original ramdisk ====="
+
+          if [ -f unpack/ramdisk.cpio ]; then
+            file unpack/ramdisk.cpio
+            stat -c "%s bytes" unpack/ramdisk.cpio
+          fi
+
+      - name: Replace kernel
         run: |
           test -f unpack/kernel
-          test -f unpack/dtb
+          test -f Image.gz-dtb
 
-          echo "===== Compare DTB ====="
-          cmp embedded.dtb unpack/dtb
+          echo "===== Replacing kernel ====="
 
-          echo "DTB sesuai dengan boot original"
+          cp Image.gz-dtb unpack/kernel
 
-          cp kernel-only.gz unpack/kernel
-
-          echo "===== Kernel baru ====="
-          ls -lh unpack/kernel
-          ls -lh unpack/dtb
+          echo "===== New kernel ====="
+          file unpack/kernel
+          stat -c "%s bytes" unpack/kernel
 
       - name: Repack boot
         run: |
@@ -149,40 +179,64 @@ jobs:
 
           ../magisk/magiskboot repack \
             boot.img \
-            ../boot-kernelsu-v2.img
+            ../boot-kernelsu-v3.img
 
           cd ..
 
-          echo "===== Repacked image ====="
-          ls -lh boot-kernelsu-v2.img
-          file boot-kernelsu-v2.img
-          sha256sum boot-kernelsu-v2.img
+          test -s boot-kernelsu-v3.img
 
-          test -s boot-kernelsu-v2.img
+          echo "===== Final boot ====="
+          ls -lh boot-kernelsu-v3.img
+          file boot-kernelsu-v3.img
+          sha256sum boot-kernelsu-v3.img
 
-      - name: Verify boot image
+      - name: Verify final boot
         run: |
+          rm -rf verify
           mkdir -p verify
 
-          ./magisk/magiskboot unpack \
-            boot-kernelsu-v2.img \
-            2>&1 | tee verify.log
+          cp boot-kernelsu-v3.img verify/boot.img
 
-          echo "===== Final files ====="
+          cd verify
+
+          ../magisk/magiskboot unpack boot.img
+
+          echo "===== Verification ====="
           ls -lah
 
-          echo "===== Verify files ====="
-          ls -lah verify || true
+          echo "===== Kernel ====="
+          file kernel
+          stat -c "%s bytes" kernel
 
-          test -s boot-kernelsu-v2.img
+          echo "===== Ramdisk ====="
 
-      - name: Upload boot image
+          if [ -f ramdisk.cpio ]; then
+            file ramdisk.cpio
+            stat -c "%s bytes" ramdisk.cpio
+          fi
+
+          echo "===== DTB ====="
+
+          if [ -f dtb ]; then
+            file dtb
+            stat -c "%s bytes" dtb
+          fi
+
+      - name: Compare DTB
+        run: |
+          if [ -f unpack/dtb ] && [ -f verify/dtb ]; then
+            echo "===== DTB comparison ====="
+            cmp unpack/dtb verify/dtb
+            echo "DTB tidak berubah."
+          else
+            echo "Tidak ada DTB terpisah untuk dibandingkan."
+          fi
+
+      - name: Upload KernelSU v3 boot
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: RMX1821-KernelSU-Boot-v2
-          path: |
-            boot-kernelsu-v2.img
-            verify.log
+          name: RMX1821-KernelSU-Boot-v3
+          path: boot-kernelsu-v3.img
           if-no-files-found: error
           retention-days: 7
