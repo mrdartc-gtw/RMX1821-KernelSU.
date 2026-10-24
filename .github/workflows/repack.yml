@@ -278,28 +278,49 @@ jobs:
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: error
 
-
       # ============================================================
-      # 13. BUILD OFFICIAL MAGISKBOOT
+      # 13. DOWNLOAD AND PREPARE MAGISK SOURCE
       # ============================================================
-      - name: Build MagiskBoot
+      - name: Prepare Magisk source
         run: |
           set -eux
 
-          echo "===== Clone official Magisk ====="
+          rm -rf magisk-source
+          rm -f magiskboot
+
+          echo "===== Clone Magisk ====="
 
           git clone \
             --depth=1 \
+            --recurse-submodules \
             https://github.com/topjohnwu/Magisk.git \
             magisk-source
 
           cd magisk-source
 
-          echo "===== Magisk source ====="
+          echo "===== Magisk commit ====="
 
           git rev-parse HEAD
 
-          echo "===== Build.py ====="
+          echo "===== Submodules ====="
+
+          git submodule status
+
+          echo "===== Initialize missing submodules ====="
+
+          git submodule update \
+            --init \
+            --recursive
+
+          echo "===== Check cxx-rs ====="
+
+          test -f native/src/external/cxx-rs/Cargo.toml
+
+          echo "cxx-rs found."
+
+          ls -lh native/src/external/cxx-rs/Cargo.toml
+
+          echo "===== Build.py help ====="
 
           python3 build.py --help
 
@@ -307,11 +328,11 @@ jobs:
 
           python3 build.py ndk
 
-          echo "===== Build magiskboot ====="
+          echo "===== Build MagiskBoot ====="
 
           python3 build.py native magiskboot
 
-          echo "===== Search magiskboot ====="
+          echo "===== Search MagiskBoot ====="
 
           find . \
             -type f \
@@ -325,21 +346,24 @@ jobs:
 
           test -n "$MAGISKBOOT"
 
-          echo "===== Found ====="
+          echo "===== MagiskBoot found ====="
 
           echo "$MAGISKBOOT"
 
-          echo "===== File information ====="
+          echo "===== MagiskBoot information ====="
 
           file "$MAGISKBOOT"
 
           ls -lh "$MAGISKBOOT"
 
-          echo "===== Copy ====="
+          echo "===== Copy MagiskBoot ====="
 
-          cp "$MAGISKBOOT" "$GITHUB_WORKSPACE/magiskboot"
+          cp \
+            "$MAGISKBOOT" \
+            "$GITHUB_WORKSPACE/magiskboot"
 
-          chmod +x "$GITHUB_WORKSPACE/magiskboot"
+          chmod +x \
+            "$GITHUB_WORKSPACE/magiskboot"
 
 
       # ============================================================
@@ -349,7 +373,7 @@ jobs:
         run: |
           set -eux
 
-          echo "===== MagiskBoot ====="
+          echo "===== Check MagiskBoot ====="
 
           test -f magiskboot
 
@@ -359,14 +383,15 @@ jobs:
 
           ls -lh magiskboot
 
-          echo "===== Help ====="
+          echo "===== MagiskBoot help ====="
 
           ./magiskboot --help || true
 
-          echo "===== Test ====="
+          echo "===== MagiskBoot version ====="
 
           ./magiskboot version || true
 
+          echo "===== MagiskBoot is ready ====="
 
       # ============================================================
       # 15. DOWNLOAD ORIGINAL BOOT
