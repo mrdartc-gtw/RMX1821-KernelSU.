@@ -166,10 +166,10 @@ jobs:
 
           echo "KernelSU configuration OK."
 
-      # ============================================================
+# ============================================================
       # 9. BUILD KERNEL
       # ============================================================
- - name: Build kernel
+      - name: Build kernel
         working-directory: kernel
         run: |
           set -eux
