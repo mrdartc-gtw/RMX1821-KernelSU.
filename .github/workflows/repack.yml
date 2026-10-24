@@ -8,11 +8,13 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+
       # ============================================================
       # 1. CHECKOUT
       # ============================================================
       - name: Checkout workflow repository
         uses: actions/checkout@v4
+
 
       # ============================================================
       # 2. INSTALL DEPENDENCIES
@@ -35,18 +37,30 @@ jobs:
             libssl-dev \
             python2 \
             python2-minimal \
+            python3 \
             zip \
             unzip \
-            wget
+            wget \
+            file \
+            rsync \
+            clang \
+            cmake \
+            ninja-build
 
-          echo "===== Python ====="
-          which python2 || true
+          echo "===== Python 2 ====="
+          which python2
           python2 --version
 
           sudo ln -sf /usr/bin/python2 /usr/local/bin/python
 
+          echo "===== Python ====="
           which python
           python --version
+
+          echo "===== Python 3 ====="
+          which python3
+          python3 --version
+
 
       # ============================================================
       # 3. CLONE KERNEL SOURCE
@@ -61,6 +75,7 @@ jobs:
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
 
+
       # ============================================================
       # 4. FIX DRVGEN.PY
       # ============================================================
@@ -70,35 +85,41 @@ jobs:
           set -eux
 
           echo "===== DrvGen location ====="
+
           ls -l tools/dct/DrvGen.py
 
           echo "===== Original shebang ====="
+
           head -n 1 tools/dct/DrvGen.py || true
 
-          # Remove CRLF if present
+          # Remove CRLF
           sed -i 's/\r$//' tools/dct/DrvGen.py
 
-          # Force Python 2 interpreter
+          # Force Python 2
           sed -i '1c\#!/usr/bin/env python2' tools/dct/DrvGen.py
 
           chmod +x tools/dct/DrvGen.py
 
           echo "===== New shebang ====="
+
           head -n 1 tools/dct/DrvGen.py
 
-          echo "===== Python ====="
+          echo "===== Python 2 ====="
+
           which python2
           python2 --version
-          python --version
 
           echo "===== Python 2 test ====="
+
           python2 -c 'print("Python 2 OK")'
 
           echo "===== DrvGen test ====="
+
           python2 tools/dct/DrvGen.py || true
 
+
       # ============================================================
-      # 5. DOWNLOAD CLANG
+      # 5. DOWNLOAD CLANG r437112
       # ============================================================
       - name: Download Clang r437112
         run: |
@@ -109,8 +130,9 @@ jobs:
             https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r437112.git \
             clang
 
+
       # ============================================================
-      # 6. DOWNLOAD ARM64 GCC
+      # 6. DOWNLOAD ARM64 GCC 4.9
       # ============================================================
       - name: Download ARM64 GCC 4.9
         run: |
@@ -121,8 +143,9 @@ jobs:
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
             gcc64
 
+
       # ============================================================
-      # 7. DOWNLOAD ARM32 GCC
+      # 7. DOWNLOAD ARM32 GCC 4.9
       # ============================================================
       - name: Download ARM32 GCC 4.9
         run: |
@@ -132,6 +155,7 @@ jobs:
             --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
             gcc32
+
 
       # ============================================================
       # 8. INTEGRATE KERNELSU v0.9.5
@@ -144,6 +168,7 @@ jobs:
           curl -LSs \
             https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh \
             | bash -
+
 
       # ============================================================
       # 9. CONFIGURE KERNEL
@@ -164,22 +189,30 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
 
           echo "===== Toolchain ====="
+
           clang --version
+
           aarch64-linux-android-gcc --version
+
           arm-linux-androideabi-gcc --version
 
           echo "===== Defconfig ====="
+
           make O=out RMX1821_defconfig
 
           echo "===== Enable KernelSU ====="
+
           ./scripts/config --file out/.config \
             -e CONFIG_KSU
 
           echo "===== Olddefconfig ====="
+
           make O=out olddefconfig
 
           echo "===== KernelSU config ====="
+
           grep -E '^CONFIG_KSU=' out/.config || true
+
 
       # ============================================================
       # 10. BUILD KERNEL
@@ -211,6 +244,7 @@ jobs:
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             Image.gz-dtb
 
+
       # ============================================================
       # 11. VERIFY KERNEL OUTPUT
       # ============================================================
@@ -219,15 +253,20 @@ jobs:
         run: |
           set -eux
 
+          echo "===== Boot directory ====="
+
           ls -lh out/arch/arm64/boot/
 
           test -f out/arch/arm64/boot/Image.gz-dtb
 
           echo "===== Kernel SHA256 ====="
+
           sha256sum out/arch/arm64/boot/Image.gz-dtb
 
           echo "===== Kernel size ====="
+
           stat -c%s out/arch/arm64/boot/Image.gz-dtb
+
 
       # ============================================================
       # 12. UPLOAD KERNEL ARTIFACT
@@ -239,69 +278,98 @@ jobs:
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: error
 
+
       # ============================================================
-      # 13. DOWNLOAD MAGISK APK / INSPECT MAGISKBOOT
+      # 13. BUILD OFFICIAL MAGISKBOOT
       # ============================================================
-      - name: Download Magisk tools
+      - name: Build MagiskBoot
         run: |
           set -eux
 
-          rm -rf magisk
-          mkdir -p magisk/apk
+          echo "===== Clone official Magisk ====="
 
-          MAGISK_VERSION="v30.7"
+          git clone \
+            --depth=1 \
+            https://github.com/topjohnwu/Magisk.git \
+            magisk-source
 
-          echo "===== Download Magisk APK ====="
+          cd magisk-source
 
-          wget \
-            --retry-connrefused \
-            --tries=5 \
-            --timeout=30 \
-            -O magisk.apk \
-            "https://github.com/topjohnwu/Magisk/releases/download/${MAGISK_VERSION}/Magisk-${MAGISK_VERSION}.apk"
+          echo "===== Magisk source ====="
 
-          test -s magisk.apk
+          git rev-parse HEAD
 
-          echo "===== APK information ====="
+          echo "===== Build.py ====="
 
-          file magisk.apk
-          ls -lh magisk.apk
-          sha256sum magisk.apk
+          python3 build.py --help
 
-          echo "===== Extract APK ====="
+          echo "===== Prepare Magisk NDK ====="
 
-          unzip -q magisk.apk -d magisk/apk
+          python3 build.py ndk
 
-          echo "===== All APK files ====="
+          echo "===== Build magiskboot ====="
 
-          find magisk/apk -type f | sort > magisk-files.txt
+          python3 build.py native magiskboot
 
-          cat magisk-files.txt
+          echo "===== Search magiskboot ====="
 
-          echo "===== Search MagiskBoot names ====="
+          find . \
+            -type f \
+            -name magiskboot \
+            -print
 
-          find magisk/apk -type f \
-            \( -iname '*magiskboot*' -o -iname '*boot*' \) \
-            -print || true
+          MAGISKBOOT=$(find . \
+            -type f \
+            -name magiskboot \
+            | head -n 1)
 
-          echo "===== Search ELF files ====="
+          test -n "$MAGISKBOOT"
 
-          find magisk/apk -type f -exec file {} \; \
-            | grep -Ei 'ELF|executable|shared object' \
-            || true
+          echo "===== Found ====="
 
-          echo "===== Search native libraries ====="
+          echo "$MAGISKBOOT"
 
-          find magisk/apk -type f \
-            \( -name '*.so' -o -name '*.so.*' \) \
-            -print || true
+          echo "===== File information ====="
 
-          echo "===== APK inspection finished ====="
+          file "$MAGISKBOOT"
 
-          echo "Magisk APK has been downloaded and inspected."
+          ls -lh "$MAGISKBOOT"
+
+          echo "===== Copy ====="
+
+          cp "$MAGISKBOOT" "$GITHUB_WORKSPACE/magiskboot"
+
+          chmod +x "$GITHUB_WORKSPACE/magiskboot"
+
 
       # ============================================================
-      # 14. DOWNLOAD ORIGINAL BOOT FROM RELEASE
+      # 14. VERIFY MAGISKBOOT
+      # ============================================================
+      - name: Verify MagiskBoot
+        run: |
+          set -eux
+
+          echo "===== MagiskBoot ====="
+
+          test -f magiskboot
+
+          chmod +x magiskboot
+
+          file magiskboot
+
+          ls -lh magiskboot
+
+          echo "===== Help ====="
+
+          ./magiskboot --help || true
+
+          echo "===== Test ====="
+
+          ./magiskboot version || true
+
+
+      # ============================================================
+      # 15. DOWNLOAD ORIGINAL BOOT
       # ============================================================
       - name: Download original boot
         run: |
@@ -309,39 +377,57 @@ jobs:
 
           mkdir -p original
 
-          wget -O original/boot.img \
+          wget \
+            --retry-connrefused \
+            --tries=5 \
+            --timeout=30 \
+            -O original/boot.img \
             https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img
+
+          test -s original/boot.img
+
+          echo "===== Original boot ====="
 
           ls -lh original/boot.img
 
-          echo "===== Original boot SHA256 ====="
+          echo "===== SHA256 ====="
+
           sha256sum original/boot.img
 
-          echo "===== Original boot size ====="
+          echo "===== Size ====="
+
           stat -c%s original/boot.img
 
+          echo "===== File ====="
+
+          file original/boot.img
+
+
       # ============================================================
-      # 15. UNPACK ORIGINAL BOOT
+      # 16. UNPACK ORIGINAL BOOT
       # ============================================================
       - name: Unpack original boot
         run: |
           set -eux
 
           rm -rf unpack
+
           mkdir -p unpack
 
           cp original/boot.img unpack/boot.img
 
           cd unpack
 
-          ../magiskboot unpack boot.img
+          "$GITHUB_WORKSPACE/magiskboot" unpack boot.img
 
           echo "===== UNPACK RESULT ====="
+
           ls -lah
 
           echo "===== Boot files ====="
 
-          for f in kernel dtb ramdisk.cpio ramdisk.cpio.gz; do
+          for f in kernel kernel_dtb dtb ramdisk.cpio ramdisk.cpio.gz second extra recovery_dtbo; do
+
             if [ -f "$f" ]; then
               echo "FOUND: $f"
               file "$f"
@@ -349,10 +435,12 @@ jobs:
             else
               echo "NOT FOUND: $f"
             fi
+
           done
 
+
       # ============================================================
-      # 16. PREPARE NEW KERNEL / DTB
+      # 17. PREPARE KERNEL
       # ============================================================
       - name: Prepare KernelSU kernel
         working-directory: kernel
@@ -361,38 +449,81 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/repack"
 
-          cp out/arch/arm64/boot/Image.gz-dtb \
+          cp \
+            out/arch/arm64/boot/Image.gz-dtb \
             "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
 
-          echo "===== New Image.gz-dtb ====="
+          echo "===== New kernel ====="
+
           ls -lh "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
+
+          file "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
 
           sha256sum "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
 
+          stat -c%s "$GITHUB_WORKSPACE/repack/Image.gz-dtb"
+
+
       # ============================================================
-      # 17. DETECT AND SPLIT APPENDED DTB
+      # 18. DETECT BOOT STRUCTURE
       # ============================================================
-      - name: Prepare kernel and DTB
+      - name: Detect boot structure
+        run: |
+          set -eux
+
+          echo "===== Original boot structure ====="
+
+          if [ -f unpack/kernel ]; then
+            echo "kernel: YES"
+            file unpack/kernel
+            stat -c%s unpack/kernel
+          else
+            echo "kernel: NO"
+          fi
+
+          if [ -f unpack/kernel_dtb ]; then
+            echo "kernel_dtb: YES"
+            file unpack/kernel_dtb
+            stat -c%s unpack/kernel_dtb
+          else
+            echo "kernel_dtb: NO"
+          fi
+
+          if [ -f unpack/dtb ]; then
+            echo "dtb: YES"
+            file unpack/dtb
+            stat -c%s unpack/dtb
+          else
+            echo "dtb: NO"
+          fi
+
+          echo "===== Header ====="
+
+          if [ -f unpack/header ]; then
+            cat unpack/header
+          else
+            echo "header file not generated"
+          fi
+
+
+      # ============================================================
+      # 19. PREPARE NEW KERNEL / DTB
+      # ============================================================
+      - name: Prepare kernel replacement
         run: |
           set -eux
 
           IMAGE="$GITHUB_WORKSPACE/repack/Image.gz-dtb"
 
-          echo "===== Original boot DTB status ====="
+          echo "===== New Image.gz-dtb ====="
 
-          if [ -f unpack/dtb ]; then
-            echo "Original boot has separate DTB."
-            echo "SEPARATE_DTB=1" >> "$GITHUB_ENV"
+          file "$IMAGE"
 
-            cp unpack/dtb repack/original-dtb
+          stat -c%s "$IMAGE"
 
-            echo "===== Original DTB ====="
-            file repack/original-dtb
-            stat -c "%n %s bytes" repack/original-dtb
+          echo "===== Check appended DTB ====="
 
-            echo "===== Searching appended DTB ====="
-
-            python3 - "$IMAGE" <<'PY'
+          python3 - "$IMAGE" <<'PY'
           import sys
           import struct
 
@@ -403,7 +534,10 @@ jobs:
 
           magic = b"\xd0\x0d\xfe\xed"
 
-          positions = []
+          print("Image size:", len(data))
+
+          found = []
+
           pos = 0
 
           while True:
@@ -413,184 +547,10 @@ jobs:
                   break
 
               if pos + 8 <= len(data):
-                  totalsize = struct.unpack(">I", data[pos + 4:pos + 8])[0]
 
-                  if totalsize > 0 and pos + totalsize == len(data):
-                      positions.append((pos, totalsize))
+                  totalsize = struct.unpack(
+                      ">I",
+                      data[pos + 4:pos + 8]
+                  )[0]
 
-              pos += 4
-
-          if not positions:
-              print("ERROR: No valid appended DTB found.")
-              sys.exit(1)
-
-          pos, totalsize = positions[-1]
-
-          print("DTB offset :", pos)
-          print("DTB size   :", totalsize)
-          print("File size  :", len(data))
-
-          with open("repack/kernel.gz", "wb") as f:
-              f.write(data[:pos])
-
-          with open("repack/dtb", "wb") as f:
-              f.write(data[pos:])
-
-          print("kernel.gz written")
-          print("dtb written")
-          PY
-
-            echo "===== Split result ====="
-
-            ls -lh repack/kernel.gz
-            ls -lh repack/dtb
-
-            echo "===== Validate DTB ====="
-
-            python3 - <<'PY'
-          import struct
-
-          path = "repack/dtb"
-
-          with open(path, "rb") as f:
-              data = f.read()
-
-          assert data[:4] == b"\xd0\x0d\xfe\xed"
-
-          size = struct.unpack(">I", data[4:8])[0]
-
-          print("DTB header size:", size)
-          print("DTB file size  :", len(data))
-
-          assert size == len(data)
-
-          print("DTB OK")
-          PY
-
-          else
-            echo "Original boot does NOT have separate DTB."
-            echo "SEPARATE_DTB=0" >> "$GITHUB_ENV"
-
-            cp "$IMAGE" repack/kernel
-          fi
-
-      # ============================================================
-      # 18. REPLACE KERNEL / DTB
-      # ============================================================
-      - name: Replace kernel files
-        run: |
-          set -eux
-
-          if [ "$SEPARATE_DTB" = "1" ]; then
-            echo "Replacing kernel and DTB separately."
-
-            cp repack/kernel.gz unpack/kernel
-            cp repack/dtb unpack/dtb
-
-          else
-            echo "Replacing kernel directly."
-
-            cp repack/Image.gz-dtb unpack/kernel
-          fi
-
-          echo "===== Final kernel ====="
-          file unpack/kernel
-          stat -c "%n %s bytes" unpack/kernel
-
-          if [ -f unpack/dtb ]; then
-            echo "===== Final DTB ====="
-            file unpack/dtb
-            stat -c "%n %s bytes" unpack/dtb
-          fi
-
-      # ============================================================
-      # 19. REPACK BOOT
-      # ============================================================
-      - name: Repack boot image
-        run: |
-          set -eux
-
-          cd unpack
-
-          ../magiskboot repack boot.img
-
-          test -f new-boot.img
-
-          cp new-boot.img "$GITHUB_WORKSPACE/boot-kernelsu-v4.img"
-
-      # ============================================================
-      # 20. VERIFY REPACKED BOOT
-      # ============================================================
-      - name: Verify repacked boot
-        run: |
-          set -eux
-
-          echo "===== Final boot ====="
-
-          ls -lh boot-kernelsu-v4.img
-
-          file boot-kernelsu-v4.img
-
-          echo "===== Final boot SHA256 ====="
-
-          sha256sum boot-kernelsu-v4.img
-
-          echo "===== Final boot size ====="
-
-          stat -c%s boot-kernelsu-v4.img
-
-          rm -rf verify
-
-          mkdir -p verify
-
-          cp boot-kernelsu-v4.img verify/boot.img
-
-          cd verify
-
-          ../magiskboot unpack boot.img
-
-          echo "===== FINAL UNPACK ====="
-
-          ls -lah
-
-          echo "===== FINAL KERNEL ====="
-
-          if [ -f kernel ]; then
-            file kernel
-            stat -c "%n %s bytes" kernel
-          else
-            echo "ERROR: kernel missing"
-            exit 1
-          fi
-
-          if [ -f dtb ]; then
-            echo "===== FINAL DTB ====="
-            file dtb
-            stat -c "%n %s bytes" dtb
-          fi
-
-      # ============================================================
-      # 21. UPLOAD FINAL BOOT
-      # ============================================================
-      - name: Upload KernelSU boot image
-        uses: actions/upload-artifact@v4
-        with:
-          name: boot-kernelsu-v4
-          path: boot-kernelsu-v4.img
-          if-no-files-found: error
-
-      # ============================================================
-      # 22. UPLOAD DEBUG FILES
-      # ============================================================
-      - name: Upload debug files
-        uses: actions/upload-artifact@v4
-        with:
-          name: RMX1821-KernelSU-v4-debug
-          path: |
-            repack/Image.gz-dtb
-            repack/kernel.gz
-            repack/dtb
-            unpack/kernel
-            unpack/dtb
-            boot-kernelsu-v4.img
-          if-no-files-found: ignore
+                  if totalsize > 0 and
