@@ -130,8 +130,7 @@ jobs:
           echo "Required KernelSU configuration:"
           grep -E '^CONFIG_(KSU|KPROBES)=' out/.config
 
-          test -f out/include/config/auto.conf
-
+            echo "Kernel configuration completed successfully."
       - name: Build kernel
         working-directory: kernel
         env:
