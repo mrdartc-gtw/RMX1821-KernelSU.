@@ -1,14 +1,20 @@
-name: Test RMX1821
+name: Build RMX1821 KernelSU v0.9.5
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  test:
+  build:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Test
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test workflow
         run: |
-          echo "Workflow detected"
-          echo "RMX1821 KernelSU"
+          echo "RMX1821 KernelSU workflow detected"
+          echo "GitHub Actions OK"
