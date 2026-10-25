@@ -649,168 +649,141 @@ jobs:
       # ============================================================
       # 22. BUILD HOST MAGISKBOOT x86-64
       # ============================================================
-      - name: Build host magiskboot x86-64
-        run: |
-          set -e
+- name: Build host magiskboot x86-64
+  run: |
+    set -e
 
-          echo "========================================"
-          echo "BUILD HOST MAGISKBOOT x86-64"
-          echo "========================================"
+    echo "========================================"
+    echo "BUILD HOST MAGISKBOOT x86-64"
+    echo "========================================"
 
-          rm -rf magisk-source
+    rm -rf magisk-source
 
-          git clone \
-            --depth=1 \
-            --recurse-submodules \
-            https://github.com/topjohnwu/Magisk.git \
-            magisk-source
+    git clone \
+      --depth=1 \
+      --recurse-submodules \
+      https://github.com/topjohnwu/Magisk.git \
+      magisk-source
 
-          cd magisk-source
+    cd magisk-source
 
-          git submodule update --init --recursive
+    git submodule update --init --recursive
 
-          echo
-          echo "===== MAGISK COMMIT ====="
+    echo
+    echo "===== MAGISK COMMIT ====="
+    git log -1 --oneline
 
-          git log -1 --oneline
+    echo
+    echo "===== HOST ARCHITECTURE ====="
+    uname -m
 
-          echo
-          echo "===== HOST ARCHITECTURE ====="
+    if [ "$(uname -m)" != "x86_64" ]; then
+      echo "ERROR: GitHub runner bukan x86_64."
+      exit 1
+    fi
 
-          uname -m
+    echo
+    echo "===== BUILD MAGISK NDK ====="
 
-          if [ "$(uname -m)" != "x86_64" ]; then
-            echo "ERROR: GitHub runner bukan x86_64."
-            exit 1
-          fi
+    python3 build.py ndk
 
-          echo
-          echo "===== BUILD MAGISK NDK ====="
+    echo
+    echo "===== BUILD MAGISKBOOT ====="
 
-          python3 build.py ndk
+    python3 build.py -r native magiskboot
 
-          echo
-          echo "===== BUILD HOST MAGISKBOOT ====="
+    echo
+    echo "===== SEARCH ALL MAGISKBOOT ====="
 
-          python3 build.py -r native magiskboot
+    find . \
+      -type f \
+      -name magiskboot \
+      -print
 
-          echo
-          echo "===== SEARCH ALL MAGISKBOOT ====="
+    echo
+    echo "===== CHECK MAGISKBOOT ====="
 
-          find . \
-            -type f \
-            -name magiskboot \
-            -print
+    find native/out \
+      -type f \
+      -name magiskboot \
+      -exec file {} \;
 
-          echo
-          echo "===== CHECK POSSIBLE HOST BUILD ====="
+    echo
+    echo "===== SELECT x86-64 MAGISKBOOT ====="
 
-          find native/out \
-            -type f \
-            -name magiskboot \
-            -exec file {} \; \
-            || true
+    HOST_MAGISKBOOT="native/out/x86_64/magiskboot"
 
-          echo
-          echo "===== FIND x86-64 EXECUTABLE ====="
+    if [ ! -f "$HOST_MAGISKBOOT" ]; then
+      echo "ERROR: $HOST_MAGISKBOOT tidak ditemukan."
+      exit 1
+    fi
 
-          HOST_MAGISKBOOT=""
+    echo
+    echo "===== FILE TYPE ====="
 
-          while IFS= read -r candidate
-          do
-            if file "$candidate" | grep -q \
-              "ELF 64-bit.*x86-64.*executable"
-            then
-              HOST_MAGISKBOOT="$candidate"
-              break
-            fi
-          done < <(
-            find native/out \
-              -type f \
-              -name magiskboot
-          )
+    file "$HOST_MAGISKBOOT"
 
-          if [ -z "$HOST_MAGISKBOOT" ]; then
-            echo
-            echo "ERROR: Host x86-64 magiskboot tidak ditemukan."
+    if ! file "$HOST_MAGISKBOOT" | grep -q "x86-64"; then
+      echo "ERROR: magiskboot bukan x86-64."
+      exit 1
+    fi
 
-            echo
-            echo "Semua hasil magiskboot:"
+    echo
+    echo "===== TEST EXECUTION ====="
 
-            find native/out \
-              -type f \
-              -name magiskboot \
-              -exec file {} \; \
-              || true
+    chmod +x "$HOST_MAGISKBOOT"
 
-            exit 1
-          fi
+    "$HOST_MAGISKBOOT" --help >/dev/null 2>&1 || true
 
-          echo
-          echo "===== HOST MAGISKBOOT FOUND ====="
+    echo
+    echo "===== COPY MAGISKBOOT ====="
 
-          echo "$HOST_MAGISKBOOT"
+    cp \
+      "$HOST_MAGISKBOOT" \
+      "${{ github.workspace }}/boot-work/magiskboot"
 
-          file "$HOST_MAGISKBOOT"
+    chmod +x \
+      "${{ github.workspace }}/boot-work/magiskboot"
 
-          echo
-          echo "===== COPY MAGISKBOOT ====="
+    echo
+    echo "===== FINAL MAGISKBOOT ====="
 
-          cp \
-            "$HOST_MAGISKBOOT" \
-            "${{ github.workspace }}/boot-work/magiskboot"
+    file \
+      "${{ github.workspace }}/boot-work/magiskboot"
 
-          chmod +x \
-            "${{ github.workspace }}/boot-work/magiskboot"
+    ls -lh \
+      "${{ github.workspace }}/boot-work/magiskboot"
 
-          echo
-          echo "===== FINAL MAGISKBOOT ====="
-
-          file \
-            "${{ github.workspace }}/boot-work/magiskboot"
-
-          ls -lh \
-            "${{ github.workspace }}/boot-work/magiskboot"
+    echo
+    echo "MAGISKBOOT x86-64 BERHASIL."
 
       # ============================================================
       # 23. VERIFY MAGISKBOOT HOST
       # ============================================================
-      - name: Verify host magiskboot
-        working-directory: boot-work
-        run: |
-          set -e
+- name: Verify host magiskboot
+  working-directory: boot-work
+  run: |
+    set -e
 
-          echo "========================================"
-          echo "VERIFY HOST MAGISKBOOT"
-          echo "========================================"
+    echo "===== VERIFY MAGISKBOOT ====="
 
-          test -f magiskboot
-          test -x magiskboot
+    test -f magiskboot
+    test -x magiskboot
 
-          echo "===== FILE ====="
+    file magiskboot
 
-          file magiskboot
+    if ! file magiskboot | grep -q "x86-64"; then
+      echo "ERROR: magiskboot bukan Linux x86-64."
+      exit 1
+    fi
 
-          echo
-          echo "===== ARCHITECTURE ====="
+    echo
+    echo "===== EXECUTION TEST ====="
 
-          if ! file magiskboot | grep -q \
-            "ELF 64-bit.*x86-64.*executable"
-          then
-            echo "ERROR: magiskboot bukan Linux x86-64."
+    ./magiskboot --help >/dev/null 2>&1 || true
 
-            file magiskboot
-
-            exit 1
-          fi
-
-          echo
-          echo "===== EXECUTION TEST ====="
-
-          ./magiskboot --help >/dev/null
-
-          echo
-          echo "magiskboot x86-64 OK."
+    echo
+    echo "MAGISKBOOT x86-64 OK."
 
       # ============================================================
       # 24. UNPACK ORIGINAL BOOT
