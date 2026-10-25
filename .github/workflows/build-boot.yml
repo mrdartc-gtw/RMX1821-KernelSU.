@@ -29,24 +29,33 @@ jobs:
             bison \
             build-essential \
             ccache \
+            cmake \
             curl \
+            device-tree-compiler \
             flex \
             git \
             libelf-dev \
             libncurses5-dev \
             libssl-dev \
+            ninja-build \
+            pkg-config \
             python3 \
             rsync \
             unzip \
             wget \
             xz-utils \
-            zstd
+            zstd \
+            file \
+            binutils
 
           echo "===== DEPENDENCIES ====="
 
           git --version
           python3 --version
+          cmake --version
+          ninja --version
           docker --version
+          file --version
 
       # ============================================================
       # 3. CLONE KERNEL SOURCE
@@ -114,6 +123,8 @@ jobs:
         run: |
           set -e
 
+          echo "===== GCC64 ====="
+
           git clone \
             --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
@@ -129,6 +140,8 @@ jobs:
       - name: Install GCC 4.9 ARM32
         run: |
           set -e
+
+          echo "===== GCC32 ====="
 
           git clone \
             --depth=1 \
@@ -183,7 +196,7 @@ jobs:
           "${CROSS_COMPILE_ARM32}gcc" --version
 
       # ============================================================
-      # 9. CPU TARGET
+      # 9. FIX CPU TARGET
       # ============================================================
       - name: Fix CPU target
         working-directory: kernel
@@ -205,7 +218,7 @@ jobs:
             Makefile | head -30
 
       # ============================================================
-      # 10. KERNELSU
+      # 10. KERNELSU v0.9.5
       # ============================================================
       - name: Integrate KernelSU v0.9.5
         working-directory: kernel
@@ -240,7 +253,7 @@ jobs:
             -printf '%f\n' \
             | sort
 
-          echo "===== SEARCH RMX / OPPO / MT6771 ====="
+          echo "===== RMX / OPPO / MT6771 ====="
 
           find arch/arm64/configs \
             -maxdepth 1 \
@@ -278,23 +291,26 @@ jobs:
           done
 
           if [ -z "$CONFIG" ]; then
-            echo "ERROR: defconfig RMX1821 tidak ditemukan."
+            echo "ERROR: RMX1821 defconfig tidak ditemukan."
+
             echo
             echo "Available configs:"
+
             find arch/arm64/configs \
               -maxdepth 1 \
               -type f \
               -printf '%f\n' \
               | sort
+
             exit 1
           fi
 
-          echo "Selected: $CONFIG"
+          echo "Selected defconfig: $CONFIG"
 
           echo "RMX_DEFCONFIG=$CONFIG" >> "$GITHUB_ENV"
 
       # ============================================================
-      # 13. BASE CONFIG
+      # 13. CREATE BASE CONFIG
       # ============================================================
       - name: Create base config
         working-directory: kernel
@@ -326,7 +342,7 @@ jobs:
           echo "Base config created."
 
       # ============================================================
-      # 14. KERNEL CONFIG
+      # 14. CONFIGURE KERNELSU
       # ============================================================
       - name: Configure KernelSU
         working-directory: kernel
@@ -342,14 +358,14 @@ jobs:
             -d CONFIG_CC_STACKPROTECTOR_STRONG \
             -d CONFIG_CC_STACKPROTECTOR_REGULAR
 
-          echo "===== CONFIG ====="
+          echo "===== KERNEL CONFIG ====="
 
           grep -E \
             'CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_LITTLE_CPU_MASK=|CONFIG_BIG_CPU_MASK=' \
             out/.config || true
 
       # ============================================================
-      # 15. sched_boost PATCH
+      # 15. FIX sched_boost
       # ============================================================
       - name: Fix sched_boost
         working-directory: kernel
@@ -398,7 +414,7 @@ jobs:
           PY
 
       # ============================================================
-      # 16. stack_trace PATCH
+      # 16. FIX stack_trace
       # ============================================================
       - name: Fix stack_trace
         working-directory: kernel
@@ -437,11 +453,12 @@ jobs:
           print("stacktrace patch OK")
           PY
 
-          grep -n "stacktrace.h" \
+          grep -n \
+            "stacktrace.h" \
             include/linux/netdevice.h
 
       # ============================================================
-      # 17. DRVGEN
+      # 17. PREPARE DRVGEN
       # ============================================================
       - name: Prepare DrvGen
         working-directory: kernel
@@ -579,10 +596,13 @@ jobs:
 
           echo "===== VERIFY IMAGE ====="
 
-          test -f out/arch/arm64/boot/Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
 
           stat \
             -c '%n = %s bytes' \
+            out/arch/arm64/boot/Image.gz-dtb
+
+          file \
             out/arch/arm64/boot/Image.gz-dtb
 
       # ============================================================
@@ -591,6 +611,8 @@ jobs:
       - name: Prepare boot workspace
         run: |
           set -e
+
+          rm -rf boot-work
 
           mkdir -p boot-work
 
@@ -621,38 +643,123 @@ jobs:
             -c '%n = %s bytes' \
             boot-work/boot-original.img
 
+          file \
+            boot-work/boot-original.img
+
       # ============================================================
       # 22. BUILD MAGISKBOOT
       # ============================================================
-      - name: Download magiskboot Linux x86-64
+      - name: Build magiskboot
+        run: |
+          set -e
+
+          echo "===== CLONE MAGISK ====="
+
+          rm -rf magisk-source
+
+          git clone \
+            --depth=1 \
+            --recurse-submodules \
+            https://github.com/topjohnwu/Magisk.git \
+            magisk-source
+
+          cd magisk-source
+
+          git submodule update --init --recursive
+
+          echo "===== MAGISK SOURCE ====="
+
+          git log -1 --oneline
+
+          echo "===== BUILD MAGISK NDK ====="
+
+          python3 build.py ndk
+
+          echo "===== BUILD MAGISKBOOT ====="
+
+          python3 build.py native magiskboot
+
+          echo "===== SEARCH MAGISKBOOT ====="
+
+          find . \
+            -type f \
+            -name magiskboot \
+            -print
+
+          MAGISKBOOT="$(find . -type f -name magiskboot | head -n 1)"
+
+          if [ -z "$MAGISKBOOT" ]; then
+            echo "ERROR: magiskboot tidak ditemukan."
+            exit 1
+          fi
+
+          echo "Found: $MAGISKBOOT"
+
+          echo "===== FILE TYPE ====="
+
+          file "$MAGISKBOOT"
+
+          echo "===== ELF CHECK ====="
+
+          readelf -h "$MAGISKBOOT" | head -30
+
+          echo "===== COPY MAGISKBOOT ====="
+
+          cp \
+            "$MAGISKBOOT" \
+            "${{ github.workspace }}/boot-work/magiskboot"
+
+          chmod +x \
+            "${{ github.workspace }}/boot-work/magiskboot"
+
+          echo "===== FINAL MAGISKBOOT ====="
+
+          file \
+            "${{ github.workspace }}/boot-work/magiskboot"
+
+          ls -lh \
+            "${{ github.workspace }}/boot-work/magiskboot"
+
+          echo "===== TEST MAGISKBOOT ====="
+
+          "${{ github.workspace }}/boot-work/magiskboot" --help || true
+
+      # ============================================================
+      # 23. VERIFY MAGISKBOOT
+      # ============================================================
+      - name: Verify magiskboot executable
         working-directory: boot-work
         run: |
           set -e
 
-          # Download Magisk APK
-          curl -L --fail --retry 3 \
-            "https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk" \
-            -o Magisk.apk
+          echo "===== MAGISKBOOT EXECUTABLE CHECK ====="
 
-          # APK adalah ZIP
-          unzip -o Magisk.apk "lib/x86_64/libmagiskboot.so" -d magisk-extract
+          test -f magiskboot
+          test -x magiskboot
 
-          cp magisk-extract/lib/x86_64/libmagiskboot.so magiskboot
-          chmod +x magiskboot
-
-          echo "===== MAGISKBOOT ====="
           file magiskboot
-          ls -lh magiskboot
 
-          # Pastikan benar-benar executable
-          ./magiskboot --help >/dev/null || true
+          if ! file magiskboot | grep -q \
+            "ELF 64-bit.*x86-64.*executable"; then
+
+            echo "ERROR: magiskboot bukan executable Linux x86-64."
+
+            file magiskboot
+
+            exit 1
+          fi
+
+          echo "magiskboot architecture OK."
+
       # ============================================================
-      # 23. UNPACK ORIGINAL BOOT
+      # 24. UNPACK ORIGINAL BOOT
       # ============================================================
       - name: Unpack original boot
         working-directory: boot-work
         run: |
           set -e
+
+          rm -rf original
 
           mkdir -p original
 
@@ -665,59 +772,160 @@ jobs:
           ls -lh
 
       # ============================================================
-      # 24. CHECK ORIGINAL BOOT
+      # 25. CHECK ORIGINAL BOOT STRUCTURE
       # ============================================================
       - name: Check original boot structure
         working-directory: boot-work/original
         run: |
           set -e
 
-          echo "===== HEADER ====="
-
-          ../magiskboot unpack ../boot-original.img || true
-
-          echo "===== FILES ====="
-
-          ls -lh
+          echo "===== ORIGINAL BOOT STRUCTURE ====="
 
           test -f kernel
           test -f kernel_dtb
           test -f ramdisk.cpio
 
+          echo "===== KERNEL ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            kernel
+
+          echo "===== DTB ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            kernel_dtb
+
+          echo "===== RAMDISK ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            ramdisk.cpio
+
+          echo "===== BOOT HEADER ====="
+
+          ../magiskboot unpack ../boot-original.img 2>&1 || true
+
           echo "Original boot structure OK."
 
       # ============================================================
-      # 25. EXTRACT NEW KERNEL
+      # 26. INSPECT NEW IMAGE
+      # ============================================================
+      - name: Inspect Image.gz-dtb
+        working-directory: boot-work
+        run: |
+          set -e
+
+          echo "===== IMAGE.gz-dtb ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            Image.gz-dtb
+
+          file \
+            Image.gz-dtb
+
+          echo "===== GZIP TEST ====="
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("Image.gz-dtb")
+          data = p.read_bytes()
+
+          print("Total size:", len(data))
+
+          if len(data) < 16:
+              raise SystemExit("Image.gz-dtb terlalu kecil")
+
+          if data[:2] != b'\x1f\x8b':
+              raise SystemExit(
+                  "Image.gz-dtb tidak dimulai dengan gzip"
+              )
+
+          print("GZIP header: OK")
+          PY
+
+      # ============================================================
+      # 27. EXTRACT NEW KERNEL
       # ============================================================
       - name: Extract new kernel
         working-directory: boot-work
         run: |
           set -e
 
-          DTB_SIZE="$(stat -c%s original/kernel_dtb)"
+          echo "===== FIND DTB IN NEW IMAGE ====="
 
-          IMAGE_SIZE="$(stat -c%s Image.gz-dtb)"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
 
-          echo "Image.gz-dtb: $IMAGE_SIZE bytes"
-          echo "Original DTB: $DTB_SIZE bytes"
+          image = Path("Image.gz-dtb").read_bytes()
 
-          if [ "$IMAGE_SIZE" -le "$DTB_SIZE" ]; then
-            echo "ERROR: invalid Image.gz-dtb size"
-            exit 1
-          fi
+          # DTB magic: 0xd00dfeed
+          magic = b'\xd0\x0d\xfe\xed'
 
-          KERNEL_GZ_SIZE=$((IMAGE_SIZE - DTB_SIZE))
+          candidates = []
 
-          echo "Kernel gzip: $KERNEL_GZ_SIZE bytes"
+          # DTB is normally 4-byte aligned.
+          for offset in range(0, len(image) - 8, 4):
+              if image[offset:offset + 4] != magic:
+                  continue
 
-          dd \
-            if=Image.gz-dtb \
-            of=new-kernel.gz \
-            bs=1 \
-            count="$KERNEL_GZ_SIZE" \
-            status=none
+              totalsize = struct.unpack(
+                  ">I",
+                  image[offset + 4:offset + 8]
+              )[0]
+
+              remaining = len(image) - offset
+
+              if totalsize == remaining:
+                  candidates.append(
+                      (offset, totalsize)
+                  )
+
+          if not candidates:
+              raise SystemExit(
+                  "ERROR: DTB tidak ditemukan di Image.gz-dtb"
+              )
+
+          offset, totalsize = candidates[-1]
+
+          kernel_gz = image[:offset]
+          new_dtb = image[offset:]
+
+          if kernel_gz[:2] != b'\x1f\x8b':
+              raise SystemExit(
+                  "ERROR: bagian kernel bukan gzip"
+              )
+
+          Path("new-kernel.gz").write_bytes(kernel_gz)
+          Path("new-kernel-dtb").write_bytes(new_dtb)
+
+          print("Image size :", len(image))
+          print("DTB offset :", offset)
+          print("DTB size   :", totalsize)
+          print("Kernel gzip:", len(kernel_gz))
+
+          if not kernel_gz:
+              raise SystemExit(
+                  "ERROR: kernel gzip kosong"
+              )
+
+          if len(new_dtb) != totalsize:
+              raise SystemExit(
+                  "ERROR: ukuran DTB tidak cocok"
+              )
+          PY
+
+          echo "===== TEST NEW KERNEL GZIP ====="
 
           gzip -t new-kernel.gz
+
+          echo "GZIP OK."
+
+          echo "===== DECOMPRESS NEW KERNEL ====="
 
           gzip -dc \
             new-kernel.gz \
@@ -731,37 +939,84 @@ jobs:
             -c '%n = %s bytes' \
             new-kernel
 
+          file \
+            new-kernel
+
+          echo "===== NEW DTB ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            new-kernel-dtb
+
+          file \
+            new-kernel-dtb
+
       # ============================================================
-      # 26. REPLACE ONLY KERNEL
+      # 28. VERIFY ORIGINAL DTB
       # ============================================================
-      - name: Replace kernel
+      - name: Verify DTB compatibility
         working-directory: boot-work
         run: |
           set -e
 
-          echo "===== REPLACE ONLY KERNEL ====="
+          echo "===== ORIGINAL DTB ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            original/kernel_dtb
+
+          echo "===== NEW BUILD DTB ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            new-kernel-dtb
+
+          echo "The new build DTB will NOT be used."
+
+          echo "Original DTB will be preserved."
+
+      # ============================================================
+      # 29. REPLACE ONLY KERNEL
+      # ============================================================
+      - name: Replace only kernel
+        working-directory: boot-work
+        run: |
+          set -e
+
+          echo "===== BACKUP ORIGINAL KERNEL ====="
+
+          cp \
+            original/kernel \
+            original/kernel.original
+
+          echo "===== REPLACE KERNEL ====="
 
           cp \
             new-kernel \
             original/kernel
 
-          test -f original/kernel
-          test -f original/kernel_dtb
-          test -f original/ramdisk.cpio
+          test -s original/kernel
+
+          echo "===== VERIFY PRESERVED FILES ====="
+
+          test -s original/kernel_dtb
+          test -s original/ramdisk.cpio
 
           echo "Kernel replaced."
-          echo "DTB preserved."
-          echo "Ramdisk preserved."
+          echo "Original DTB preserved."
+          echo "Original ramdisk preserved."
 
       # ============================================================
-      # 27. REPACK BOOT
+      # 30. REPACK BOOT
       # ============================================================
       - name: Repack boot
         working-directory: boot-work/original
         run: |
           set -e
 
-          echo "===== REPACK ====="
+          echo "===== REPACK BOOT ====="
+
+          rm -f ../boot-kernelsu.img
 
           ../magiskboot repack \
             ../boot-original.img \
@@ -769,27 +1024,33 @@ jobs:
 
           test -s ../boot-kernelsu.img
 
-          echo "===== RESULT ====="
+          echo "===== REPACKED BOOT ====="
 
           stat \
             -c '%n = %s bytes' \
             ../boot-kernelsu.img
 
+          file \
+            ../boot-kernelsu.img
+
       # ============================================================
-      # 28. VERIFY REPACKED BOOT
+      # 31. VERIFY REPACKED BOOT
       # ============================================================
-      - name: Verify boot image
+      - name: Verify repacked boot
         working-directory: boot-work
         run: |
           set -e
 
-          echo "===== VERIFY BOOT IMAGE ====="
+          echo "===== VERIFY REPACKED BOOT ====="
+
+          rm -rf verify
 
           mkdir -p verify
 
           cd verify
 
-          ../magiskboot unpack ../boot-kernelsu.img
+          ../magiskboot unpack \
+            ../boot-kernelsu.img
 
           echo "===== FILES ====="
 
@@ -799,19 +1060,23 @@ jobs:
           test -f kernel_dtb
           test -f ramdisk.cpio
 
+          echo "Repacked boot can be unpacked."
+
       # ============================================================
-      # 29. VERIFY DTB
+      # 32. VERIFY DTB UNCHANGED
       # ============================================================
       - name: Verify DTB unchanged
         working-directory: boot-work
         run: |
           set -e
 
-          echo "===== DTB CHECK ====="
+          echo "===== DTB SHA256 ====="
 
           sha256sum \
             original/kernel_dtb \
             verify/kernel_dtb
+
+          echo "===== DTB BINARY COMPARE ====="
 
           cmp \
             original/kernel_dtb \
@@ -820,18 +1085,20 @@ jobs:
           echo "DTB unchanged: OK."
 
       # ============================================================
-      # 30. VERIFY RAMDISK
+      # 33. VERIFY RAMDISK UNCHANGED
       # ============================================================
       - name: Verify ramdisk unchanged
         working-directory: boot-work
         run: |
           set -e
 
-          echo "===== RAMDISK CHECK ====="
+          echo "===== RAMDISK SHA256 ====="
 
           sha256sum \
             original/ramdisk.cpio \
             verify/ramdisk.cpio
+
+          echo "===== RAMDISK BINARY COMPARE ====="
 
           cmp \
             original/ramdisk.cpio \
@@ -840,21 +1107,59 @@ jobs:
           echo "Ramdisk unchanged: OK."
 
       # ============================================================
-      # 31. VERIFY FINAL IMAGE
+      # 34. VERIFY KERNEL DIFFERENCE
+      # ============================================================
+      - name: Verify kernel replacement
+        working-directory: boot-work
+        run: |
+          set -e
+
+          echo "===== KERNEL SHA256 ====="
+
+          sha256sum \
+            original/kernel.original \
+            original/kernel \
+            verify/kernel
+
+          echo "===== CHECK NEW KERNEL ====="
+
+          cmp \
+            original/kernel \
+            verify/kernel
+
+          echo "Repacked kernel matches replaced kernel."
+
+          if cmp -s \
+            original/kernel.original \
+            original/kernel
+          then
+            echo "ERROR: kernel tidak berubah."
+            exit 1
+          fi
+
+          echo "Kernel successfully replaced."
+
+      # ============================================================
+      # 35. VERIFY FINAL BOOT
       # ============================================================
       - name: Verify final boot image
         working-directory: boot-work
         run: |
           set -e
 
-          echo "===== FINAL BOOT ====="
+          echo "========================================"
+          echo "FINAL RMX1821 KERNELSU BOOT"
+          echo "========================================"
+
+          test -s boot-kernelsu.img
 
           stat \
             -c '%n = %s bytes' \
-            boot-kernelsu.img
+            boot-original.img \
+            boot-kernelsu.img \
+            Image.gz-dtb
 
-          file boot-kernelsu.img
-
+          echo
           echo "===== SHA256 ====="
 
           sha256sum \
@@ -866,8 +1171,16 @@ jobs:
             boot-kernelsu.img \
             > boot-kernelsu.img.sha256
 
+          echo
+          echo "===== FINAL CHECKS ====="
+
+          test -s boot-kernelsu.img
+          test -s boot-kernelsu.img.sha256
+
+          echo "All final checks passed."
+
       # ============================================================
-      # 32. UPLOAD FINAL ARTIFACT
+      # 36. UPLOAD FINAL ARTIFACT
       # ============================================================
       - name: Upload final KernelSU boot
         uses: actions/upload-artifact@v4
