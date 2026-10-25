@@ -72,17 +72,6 @@ jobs:
         run: |
           echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
 
-          echo "Repository root:"
-          ls -lah "$GITHUB_WORKSPACE"
-
-          echo "gcc64:"
-          find "$GITHUB_WORKSPACE/gcc64" -maxdepth 2 -type f \
-            -name '*gcc' -o -name 'gcc' | head -20
-
-          echo "gcc32:"
-          find "$GITHUB_WORKSPACE/gcc32" -maxdepth 2 -type f \
-            -name '*gcc' -o -name 'gcc' | head -20
-
           test -x "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc"
           test -x "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
 
@@ -99,120 +88,14 @@ jobs:
           test -f drivers/kernelsu/Kconfig
           test -f drivers/kernelsu/Makefile
 
+          echo "KernelSU v0.9.5 integrated."
+
       - name: Prepare DrvGen Python 2 wrapper
         working-directory: kernel
         run: |
           if [ -f tools/dct/DrvGen.py ] && [ ! -f tools/dct/DrvGen.py.real ]; then
             mv tools/dct/DrvGen.py tools/dct/DrvGen.py.real
           fi
-
-          printf '%s\n' \
-            '#!/bin/sh' \
-            'SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"' \
-            'KERNEL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"' \
-            'exec docker run --rm -v "$KERNEL_DIR:/workspace" -w /workspace/kernel/out python:2.7 python ../tools/dct/DrvGen.py.real "$@"' \
-            > tools/dct/DrvGen.py
-
-          chmod +x tools/dct/DrvGen.py
-
-          test -f tools/dct/DrvGen.py.real
-          test -x tools/dct/DrvGen.py
-
-          echo "DrvGen wrapper:"
-          cat tools/dct/DrvGen.py
-
-      - name: Configure kernel
-        working-directory: kernel
-        env:
-          ARCH: arm64
-          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
-          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
-        run: |
-          echo "Checking GCC:"
-          "$CROSS_COMPILE"gcc --version | head -n 1
-
-          make O=out \
-            ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            oppo6771_defconfig
-
-          echo "Disabling unsupported stack protector..."
-
-          scripts/config --file out/.config \
-            -d CONFIG_CC_STACKPROTECTOR_STRONG \
-            -d CONFIG_CC_STACKPROTECTOR_REGULAR
-
-          scripts/config --file out/.config \
-            -e CONFIG_KPROBES \
-            -e CONFIG_KSU
-
-          scripts/config --file out/.config \
-            --set-val LITTLE_CPU_MASK 15 \
-            --set-val BIG_CPU_MASK 240
-
-          echo "Configuration before olddefconfig:"
-          grep -E 'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
-
-          make O=out \
-            ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            olddefconfig
-
-          echo "Final configuration:"
-          grep -E 'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
-
-          echo "Required KernelSU configuration:"
-          grep -E '^CONFIG_(KSU|KPROBES)=' out/.config
-
-          echo "Kernel configuration completed successfully."
-
-- name: Build kernel
-        working-directory: kernel
-        env:
-          ARCH: arm64
-          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
-          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
-        run: |
-          set -e
-
-          echo "===== GCC VERSION ====="
-          "$CROSS_COMPILE"gcc --version | head -n 3
-
-          echo "===== CHECK GCC A53 ====="
-          "$CROSS_COMPILE"gcc \
-            -mcpu=cortex-a53 \
-            -E -x c /dev/null \
-            -o /dev/null
-
-          echo "GCC cortex-a53: OK"
-
-          echo "===== FIX CPU FLAGS ====="
-
-          sed -i \
-            's/-mcpu=cortex-a73\.cortex-a53 -mtune=cortex-a73\.cortex-a53/-mcpu=cortex-a53 -mtune=cortex-a53/g' \
-            Makefile
-
-          echo "CPU flags after modification:"
-          grep -n -E 'mcpu=|mtune=' Makefile | head -20
-
-          echo "===== VERIFY NO A73 COMBINED FLAG ====="
-
-          if grep -n 'cortex-a73\.cortex-a53' Makefile; then
-            echo "ERROR: cortex-a73.cortex-a53 masih ditemukan"
-            exit 1
-          fi
-
-          echo "CPU flag fix: OK"
-
-          echo "===== PREPARE OUTPUT ====="
-
-          rm -rf out
-
-          mkdir -p out
-
-          echo "===== DRVGEN WRAPPER ====="
 
           cat > tools/dct/DrvGen.py <<'EOF'
           #!/bin/sh
@@ -229,10 +112,96 @@ jobs:
 
           chmod +x tools/dct/DrvGen.py
 
-          echo "DrvGen wrapper:"
-          cat tools/dct/DrvGen.py
+          test -f tools/dct/DrvGen.py.real
+          test -x tools/dct/DrvGen.py
 
-          echo "===== TEST DRVGEN MANUALLY ====="
+          echo "DrvGen wrapper prepared."
+
+      - name: Configure kernel
+        working-directory: kernel
+        env:
+          ARCH: arm64
+          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
+        run: |
+          echo "===== GCC ====="
+          "$CROSS_COMPILE"gcc --version | head -n 3
+
+          echo "===== TEST GCC A53 ====="
+
+          "$CROSS_COMPILE"gcc \
+            -mcpu=cortex-a53 \
+            -E -x c /dev/null \
+            -o /dev/null
+
+          echo "GCC cortex-a53: OK"
+
+          echo "===== FIX CPU FLAGS ====="
+
+          sed -i \
+            's/-mcpu=cortex-a73\.cortex-a53 -mtune=cortex-a73\.cortex-a53/-mcpu=cortex-a53 -mtune=cortex-a53/g' \
+            Makefile
+
+          echo "CPU flags:"
+          grep -n -E 'mcpu=|mtune=' Makefile | head -20
+
+          if grep -q 'cortex-a73\.cortex-a53' Makefile; then
+            echo "ERROR: unsupported cortex-a73.cortex-a53 remains."
+            exit 1
+          fi
+
+          echo "===== DEFCONFIG ====="
+
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            oppo6771_defconfig
+
+          echo "===== MODIFY CONFIG ====="
+
+          scripts/config --file out/.config \
+            -d CONFIG_CC_STACKPROTECTOR_STRONG \
+            -d CONFIG_CC_STACKPROTECTOR_REGULAR
+
+          scripts/config --file out/.config \
+            -e CONFIG_KPROBES \
+            -e CONFIG_KSU
+
+          scripts/config --file out/.config \
+            --set-val LITTLE_CPU_MASK 15 \
+            --set-val BIG_CPU_MASK 240
+
+          echo "===== CONFIG BEFORE OLDDEFCONFIG ====="
+
+          grep -E \
+            'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' \
+            out/.config || true
+
+          echo "===== OLDDEFCONFIG ====="
+
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            olddefconfig
+
+          echo "===== FINAL CONFIG ====="
+
+          grep -E \
+            'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' \
+            out/.config || true
+
+          grep -E '^CONFIG_(KSU|KPROBES)=' out/.config
+
+          echo "Kernel configuration completed."
+
+      - name: Test DrvGen
+        working-directory: kernel
+        run: |
+          echo "===== TEST DRVGEN ====="
+
+          mkdir -p arch/arm64/boot/dts/oppo6771_18601
 
           cd tools/dct
 
@@ -244,21 +213,16 @@ jobs:
 
           cd ../..
 
-          echo "DrvGen test: OK"
+          echo "DrvGen completed successfully."
 
-          echo "===== KERNEL CONFIG ====="
-
-          make O=out \
-            ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            olddefconfig
-
-          echo "===== KSU CONFIG ====="
-
-          grep -E \
-            'CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KPROBE_EVENTS=' \
-            out/.config || true
+      - name: Build kernel
+        working-directory: kernel
+        env:
+          ARCH: arm64
+          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
+        run: |
+          set -e
 
           echo "===== BUILD KERNEL ====="
 
@@ -358,10 +322,8 @@ jobs:
             count="$KERNEL_GZ_SIZE" \
             status=none
 
-          echo "Testing kernel gzip:"
           gzip -t ../new-kernel.gz
 
-          echo "Extracting kernel:"
           gzip -dc ../new-kernel.gz > ../unpack/kernel
 
           test -s ../unpack/kernel
@@ -388,12 +350,17 @@ jobs:
 
       - name: Verify final boot image
         run: |
-          echo "Checking final boot image..."
+          rm -rf verify-boot
+          mkdir verify-boot
 
-          ./magiskboot unpack new-boot.img
+          cd verify-boot
+
+          ../magiskboot unpack ../new-boot.img
 
           echo "Final boot components:"
-          ls -lh kernel kernel_dtb ramdisk.cpio 2>/dev/null || true
+          ls -lh
+
+          cd ..
 
           echo "Final boot SHA256:"
           sha256sum new-boot.img
