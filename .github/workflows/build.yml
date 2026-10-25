@@ -43,7 +43,7 @@ jobs:
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
 
-# ============================================================
+      # ============================================================
       # INSTALL CLANG r437112b
       # ============================================================
 
@@ -59,33 +59,41 @@ jobs:
             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/98603376816dd5a1fbb960856438124d4c618158/clang-r437112b.tar.gz" \
             -o clang-r437112b.tar.gz
 
+          echo "===== DOWNLOAD COMPLETE ====="
+
+          ls -lh clang-r437112b.tar.gz
+
           echo "===== EXTRACT CLANG ====="
 
           tar -xzf clang-r437112b.tar.gz -C clang
 
           rm -f clang-r437112b.tar.gz
 
+          echo "===== CHECK CLANG DIRECTORY ====="
+
+          ls -lah clang | head -30
+
           echo "===== VERIFY CLANG ====="
 
-          test -x clang-r437112b/bin/clang
+          if [ ! -x clang/bin/clang ]; then
+            echo "ERROR: clang/bin/clang tidak ditemukan"
+
+            echo "===== SEARCH CLANG ====="
+            find clang -type f -name clang -print
+
+            echo "===== DIRECTORY TREE ====="
+            find clang -maxdepth 2 -type d -print | head -50
+
+            exit 1
+          fi
+
+          chmod +x clang/bin/clang
 
           echo "===== CLANG VERSION ====="
 
-          ./clang-r437112b/bin/clang --version
-
-          echo "===== MOVE CLANG ====="
-
-          mv clang-r437112b/* clang/
-
-          rmdir clang-r437112b
-
-          echo "===== FINAL VERIFY ====="
-
-          test -x clang/bin/clang
-
           ./clang/bin/clang --version
 
-          echo "===== CLANG READY ====="
+          echo "===== CLANG r437112b READY ====="
 
       # ============================================================
       # GCC 4.9 AARCH64
