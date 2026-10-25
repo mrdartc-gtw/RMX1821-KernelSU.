@@ -68,6 +68,26 @@ jobs:
           echo "GCC 32-bit:"
           gcc32/bin/arm-linux-androideabi-gcc --version | head -n 1
 
+      - name: Verify toolchain layout
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+
+          echo "Repository root:"
+          ls -lah "$GITHUB_WORKSPACE"
+
+          echo "gcc64:"
+          find "$GITHUB_WORKSPACE/gcc64" -maxdepth 2 -type f \
+            -name '*gcc' -o -name 'gcc' | head -20
+
+          echo "gcc32:"
+          find "$GITHUB_WORKSPACE/gcc32" -maxdepth 2 -type f \
+            -name '*gcc' -o -name 'gcc' | head -20
+
+          test -x "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc"
+          test -x "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
+
+          echo "Toolchain layout OK."
+
       - name: Integrate KernelSU v0.9.5
         working-directory: kernel
         run: |
@@ -101,9 +121,18 @@ jobs:
         working-directory: kernel
         env:
           ARCH: arm64
-          CROSS_COMPILE: ../../gcc64/bin/aarch64-linux-android-
-          CROSS_COMPILE_ARM32: ../../gcc32/bin/arm-linux-androideabi-
+          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
+          echo "Workspace:"
+          echo "$GITHUB_WORKSPACE"
+
+          echo "Checking GCC:"
+          ls -lh "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc"
+          ls -lh "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
+
+          "$CROSS_COMPILE"gcc --version | head -n 1
+
           make O=out \
             ARCH=arm64 \
             CROSS_COMPILE="$CROSS_COMPILE" \
@@ -139,16 +168,17 @@ jobs:
         working-directory: kernel
         env:
           ARCH: arm64
-          CROSS_COMPILE: ../../gcc64/bin/aarch64-linux-android-
-          CROSS_COMPILE_ARM32: ../../gcc32/bin/arm-linux-androideabi-
+          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
           echo "Checking GCC:"
           "$CROSS_COMPILE"gcc --version | head -n 1
-          "$CROSS_COMPILE"gcc -v
 
-          echo "Checking GCC path:"
-          ls -lh ../../gcc64/bin/aarch64-linux-android-gcc
-          ls -lh ../../gcc32/bin/arm-linux-androideabi-gcc
+          echo "GCC 64-bit:"
+          ls -lh "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc"
+
+          echo "GCC 32-bit:"
+          ls -lh "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
 
           make -j"$(nproc)" \
             O=out \
