@@ -43,41 +43,49 @@ jobs:
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
 
-      # ============================================================
-      # INSTALL CLANG
+# ============================================================
+      # INSTALL CLANG r437112b
       # ============================================================
 
-- name: Install Clang r437112
+      - name: Install Clang r437112b
         run: |
           set -e
 
-          echo "===== DOWNLOAD CLANG r437112 ====="
+          echo "===== DOWNLOAD CLANG r437112b ====="
 
           mkdir -p clang
 
           curl -L --fail --retry 3 \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r437112.tar.gz" \
-            -o clang-r437112.tar.gz
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/98603376816dd5a1fbb960856438124d4c618158/clang-r437112b.tar.gz" \
+            -o clang-r437112b.tar.gz
 
           echo "===== EXTRACT CLANG ====="
 
-          tar -xzf clang-r437112.tar.gz -C clang
+          tar -xzf clang-r437112b.tar.gz -C clang
 
-          rm -f clang-r437112.tar.gz
+          rm -f clang-r437112b.tar.gz
 
           echo "===== VERIFY CLANG ====="
 
-          if [ ! -x clang/bin/clang ]; then
-            echo "ERROR: clang/bin/clang tidak ditemukan"
-            find clang -maxdepth 3 -type f -name clang -print
-            exit 1
-          fi
+          test -x clang-r437112b/bin/clang
 
-          chmod +x clang/bin/clang
+          echo "===== CLANG VERSION ====="
+
+          ./clang-r437112b/bin/clang --version
+
+          echo "===== MOVE CLANG ====="
+
+          mv clang-r437112b/* clang/
+
+          rmdir clang-r437112b
+
+          echo "===== FINAL VERIFY ====="
+
+          test -x clang/bin/clang
 
           ./clang/bin/clang --version
 
-          echo "===== CLANG r437112 READY ====="
+          echo "===== CLANG READY ====="
 
       # ============================================================
       # GCC 4.9 AARCH64
