@@ -168,52 +168,116 @@ jobs:
 
           echo "Kernel configuration completed successfully."
 
-      - name: Diagnose GCC and CPU flags
+- name: Build kernel
         working-directory: kernel
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
-          set -x
+          set -e
 
           echo "===== GCC VERSION ====="
           "$CROSS_COMPILE"gcc --version | head -n 3
 
-          echo "===== TEST GCC A53 ====="
+          echo "===== CHECK GCC A53 ====="
           "$CROSS_COMPILE"gcc \
             -mcpu=cortex-a53 \
             -E -x c /dev/null \
             -o /dev/null
 
-          echo "===== SEARCH CPU FLAGS ====="
-          grep -Rni \
-            -E 'cortex-a73\.cortex-a53|cortex-a73' \
-            Makefile arch scripts 2>/dev/null | head -100 || true
+          echo "GCC cortex-a53: OK"
 
-          echo "===== SEARCH ALL MCpu/MTUNE ====="
-          grep -Rni \
-            -E 'mcpu=|mtune=' \
-            Makefile arch scripts 2>/dev/null | head -150 || true
+          echo "===== FIX CPU FLAGS ====="
 
-          echo "===== DRVGEN FILE ====="
-          ls -lah tools/dct/DrvGen.py*
+          sed -i \
+            's/-mcpu=cortex-a73\.cortex-a53 -mtune=cortex-a73\.cortex-a53/-mcpu=cortex-a53 -mtune=cortex-a53/g' \
+            Makefile
 
-          echo "===== DRVGEN PATH REFERENCES ====="
-          grep -n -E \
-            'DWS|dws|drivers/misc|/drivers|arch/arm64' \
-            tools/dct/DrvGen.py.real 2>/dev/null | head -100 || true
+          echo "CPU flags after modification:"
+          grep -n -E 'mcpu=|mtune=' Makefile | head -20
 
-          echo "===== DWS FILE ====="
-          ls -lah \
-            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+          echo "===== VERIFY NO A73 COMBINED FLAG ====="
 
-          echo "===== DWS ABSOLUTE PATH ====="
-          realpath \
-            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+          if grep -n 'cortex-a73\.cortex-a53' Makefile; then
+            echo "ERROR: cortex-a73.cortex-a53 masih ditemukan"
+            exit 1
+          fi
 
-          echo "===== DRVGEN SCRIPT HEAD ====="
-          sed -n '1,220p' tools/dct/DrvGen.py.real
+          echo "CPU flag fix: OK"
+
+          echo "===== PREPARE OUTPUT ====="
+
+          rm -rf out
+
+          mkdir -p out
+
+          echo "===== DRVGEN WRAPPER ====="
+
+          cat > tools/dct/DrvGen.py <<'EOF'
+          #!/bin/sh
+
+          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          KERNEL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
+
+          exec docker run --rm \
+            -v "$KERNEL_DIR:/workspace" \
+            -w /workspace/tools/dct \
+            python:2.7 \
+            python2 DrvGen.py.real "$@"
+          EOF
+
+          chmod +x tools/dct/DrvGen.py
+
+          echo "DrvGen wrapper:"
+          cat tools/dct/DrvGen.py
+
+          echo "===== TEST DRVGEN MANUALLY ====="
+
+          cd tools/dct
+
+          ./DrvGen.py \
+            ../../drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws \
+            ../../arch/arm64/boot/dts/oppo6771_18601 \
+            ../../arch/arm64/boot/dts/oppo6771_18601 \
+            cust_dtsi
+
+          cd ../..
+
+          echo "DrvGen test: OK"
+
+          echo "===== KERNEL CONFIG ====="
+
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            olddefconfig
+
+          echo "===== KSU CONFIG ====="
+
+          grep -E \
+            'CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_KPROBE_EVENTS=' \
+            out/.config || true
+
+          echo "===== BUILD KERNEL ====="
+
+          make -j"$(nproc)" \
+            O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            Image.gz-dtb
+
+          echo "===== BUILD RESULT ====="
+
+          test -f out/arch/arm64/boot/Image.gz-dtb
+
+          ls -lh out/arch/arm64/boot/Image.gz-dtb
+
+          file out/arch/arm64/boot/Image.gz-dtb
+
+          echo "===== KERNEL BUILD SUCCESS ====="
 
       - name: Download original boot image
         run: |
