@@ -450,7 +450,29 @@ jobs:
 
 
       # ============================================================
-      # 14. RUN DEFCONFIG
+      # 14. CLEAN BUILD OUTPUT
+      # ============================================================
+
+      - name: Clean kernel output
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "CLEAN KERNEL BUILD OUTPUT"
+          echo "========================================"
+
+          rm -rf out
+
+          mkdir -p out
+
+          echo "Build output cleaned."
+
+          ls -la out
+
+
+      # ============================================================
+      # 15. GENERATE KERNEL CONFIGURATION
       # ============================================================
 
       - name: Generate kernel configuration
@@ -464,7 +486,12 @@ jobs:
         run: |
           set -e
 
+          echo "========================================"
+          echo "GENERATE CONFIGURATION"
+          echo "========================================"
+
           make \
+            O=out \
             ARCH=arm64 \
             CC="$CC" \
             CLANG_TRIPLE="$CLANG_TRIPLE" \
@@ -472,9 +499,14 @@ jobs:
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             "$RMX_DEFCONFIG"
 
+          test -f out/.config
+
+          echo
+          echo "Configuration generated."
+
 
       # ============================================================
-      # 15. ENABLE KERNELSU
+      # 16. ENABLE KERNELSU
       # ============================================================
 
       - name: Enable KernelSU configuration
@@ -488,23 +520,28 @@ jobs:
         run: |
           set -e
 
+          echo "========================================"
+          echo "ENABLE KERNELSU"
+          echo "========================================"
+
           scripts/config \
-            --file .config \
+            --file out/.config \
             --enable KPROBES
 
           scripts/config \
-            --file .config \
+            --file out/.config \
             --enable KSU
 
           scripts/config \
-            --file .config \
+            --file out/.config \
             --disable CC_STACKPROTECTOR_STRONG
 
           scripts/config \
-            --file .config \
+            --file out/.config \
             --disable CC_STACKPROTECTOR_REGULAR
 
           make \
+            O=out \
             ARCH=arm64 \
             CC="$CC" \
             CLANG_TRIPLE="$CLANG_TRIPLE" \
@@ -514,41 +551,10 @@ jobs:
 
           echo
           echo "KernelSU configuration:"
+
           grep -E \
             '^CONFIG_(KPROBES|KSU)=' \
-            .config || true
-
-
-      # ============================================================
-      # 16. VERIFY CPU MASK
-      # ============================================================
-
-      - name: Configure KernelSU CPU masks
-        working-directory: kernel
-        run: |
-          set -e
-
-          scripts/config \
-            --file .config \
-            --set-val LITTLE_CPU_MASK 15
-
-          scripts/config \
-            --file .config \
-            --set-val BIG_CPU_MASK 240
-
-          make \
-            ARCH=arm64 \
-            CC="${CC}" \
-            CLANG_TRIPLE="${CLANG_TRIPLE}" \
-            CROSS_COMPILE="${CROSS_COMPILE}" \
-            CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}" \
-            olddefconfig
-
-          echo
-          echo "KernelSU CPU masks:"
-          grep -E \
-            '^CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK)=' \
-            .config || true
+            out/.config
 
 
       # ============================================================
