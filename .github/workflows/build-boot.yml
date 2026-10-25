@@ -852,25 +852,31 @@ jobs:
           echo "UNPACK ORIGINAL BOOT"
           echo "========================================"
 
+          echo
+          echo "Current directory:"
+          pwd
+
+          echo
+          echo "Before unpack:"
+          ls -lah
+
+          echo
+          echo "Running MagiskBoot..."
+
           ../Magisk/native/out/x86_64/magiskboot \
             unpack \
             ../boot-original.img
 
           echo
-          echo "Unpacked files:"
-          ls -lah original
+          echo "MagiskBoot exit: PASS"
 
           echo
-          echo "Kernel:"
-          file original/kernel
+          echo "After unpack:"
+          ls -lah
 
           echo
-          echo "Kernel DTB:"
-          file original/kernel_dtb
-
-          echo
-          echo "Ramdisk:"
-          file original/ramdisk.cpio
+          echo "Searching unpacked components:"
+          find . -maxdepth 2 -type f -printf '%p  %s bytes\n' | sort
 
 
       # ============================================================
