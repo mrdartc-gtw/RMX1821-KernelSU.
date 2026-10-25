@@ -101,8 +101,8 @@ jobs:
         working-directory: kernel
         env:
           ARCH: arm64
-          CROSS_COMPILE: ../gcc64/bin/aarch64-linux-android-
-          CROSS_COMPILE_ARM32: ../gcc32/bin/arm-linux-androideabi-
+          CROSS_COMPILE: ../../gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ../../gcc32/bin/arm-linux-androideabi-
         run: |
           make O=out \
             ARCH=arm64 \
@@ -139,9 +139,17 @@ jobs:
         working-directory: kernel
         env:
           ARCH: arm64
-          CROSS_COMPILE: ../gcc64/bin/aarch64-linux-android-
-          CROSS_COMPILE_ARM32: ../gcc32/bin/arm-linux-androideabi-
+          CROSS_COMPILE: ../../gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ../../gcc32/bin/arm-linux-androideabi-
         run: |
+          echo "Checking GCC:"
+          "$CROSS_COMPILE"gcc --version | head -n 1
+          "$CROSS_COMPILE"gcc -v
+
+          echo "Checking GCC path:"
+          ls -lh ../../gcc64/bin/aarch64-linux-android-gcc
+          ls -lh ../../gcc32/bin/arm-linux-androideabi-gcc
+
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
