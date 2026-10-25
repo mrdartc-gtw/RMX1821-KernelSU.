@@ -110,16 +110,16 @@ jobs:
             '#!/bin/sh' \
             'SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"' \
             'KERNEL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"' \
-            'exec docker run --rm -v "$KERNEL_DIR:/workspace" -w /workspace python:2.7 python tools/dct/DrvGen.py.real "$@"' \
+            'exec docker run --rm -v "$KERNEL_DIR:/workspace" -w /workspace/kernel/out python:2.7 python ../tools/dct/DrvGen.py.real "$@"' \
             > tools/dct/DrvGen.py
 
           chmod +x tools/dct/DrvGen.py
 
+          test -f tools/dct/DrvGen.py.real
+          test -x tools/dct/DrvGen.py
+
           echo "DrvGen wrapper:"
           cat tools/dct/DrvGen.py
-
-          echo "DrvGen source:"
-          head -n 10 tools/dct/DrvGen.py.real
 
       - name: Configure kernel
         working-directory: kernel
@@ -184,11 +184,17 @@ jobs:
           echo "GCC 32-bit:"
           ls -lh "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
 
+          echo "Testing CPU target:"
+          "$CROSS_COMPILE"gcc -mcpu=cortex-a73 -E -x c /dev/null -o /dev/null
+
+          echo "Building kernel..."
+
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            KCFLAGS="-mcpu=cortex-a73" \
             Image.gz-dtb
 
           test -f out/arch/arm64/boot/Image.gz-dtb
@@ -197,7 +203,6 @@ jobs:
           ls -lh out/arch/arm64/boot/Image.gz-dtb
 
           file out/arch/arm64/boot/Image.gz-dtb
-
       - name: Download original boot image
         run: |
           wget -O boot-original.img \
