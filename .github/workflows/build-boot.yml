@@ -936,68 +936,6 @@ jobs:
           echo "ORIGINAL BOOT STRUCTURE: PASS"
           echo "========================================"
 
-      - name: Verify kernel formats
-        working-directory: magiskboot
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "VERIFY KERNEL FORMATS"
-          echo "========================================"
-
-          echo
-          echo "===== ORIGINAL ====="
-          file kernel
-
-          echo
-          echo "===== NEW ====="
-          file new-kernel
-
-          echo
-          echo "===== ORIGINAL HEADER ====="
-          xxd -l 64 kernel
-
-          echo
-          echo "===== NEW HEADER ====="
-          xxd -l 64 new-kernel
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          original = Path("kernel").read_bytes()
-          new = Path("new-kernel").read_bytes()
-
-          if len(original) < 0x3c:
-              raise SystemExit(
-                  "ERROR: original kernel terlalu kecil."
-              )
-
-          if len(new) < 0x3c:
-              raise SystemExit(
-                  "ERROR: new kernel terlalu kecil."
-              )
-
-          original_magic = original[0x38:0x3c]
-          new_magic = new[0x38:0x3c]
-
-          print("Original magic:", original_magic.hex())
-          print("New magic:", new_magic.hex())
-
-          if original_magic != b'ARM\x64':
-              raise SystemExit(
-                  "ERROR: original bukan ARM64 Image."
-              )
-
-          if new_magic != b'ARM\x64':
-              raise SystemExit(
-                  "ERROR: new bukan ARM64 Image."
-              )
-
-          print("Original kernel: ARM64 Image")
-          print("New kernel: ARM64 Image")
-          print("Kernel format compatible.")
-          PY
-
       # ============================================================
       # 25. COPY NEW Image.gz-dtb
       # ============================================================
@@ -1240,7 +1178,7 @@ jobs:
 
           echo
           echo "===== ORIGINAL ====="
-          file original/kernel
+          file kernel
 
           echo
           echo "===== NEW ====="
@@ -1248,7 +1186,7 @@ jobs:
 
           echo
           echo "===== ORIGINAL HEADER ====="
-          xxd -l 64 original/kernel
+          xxd -l 64 kernel
 
           echo
           echo "===== NEW HEADER ====="
@@ -1257,13 +1195,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          original = Path(
-              "original/kernel"
-          ).read_bytes()
-
-          new = Path(
-              "new-kernel"
-          ).read_bytes()
+          original = Path("kernel").read_bytes()
+          new = Path("new-kernel").read_bytes()
 
           if len(original) < 0x3c:
               raise SystemExit(
@@ -1275,21 +1208,11 @@ jobs:
                   "ERROR: new kernel terlalu kecil."
               )
 
-          original_magic = \
-              original[0x38:0x3c]
+          original_magic = original[0x38:0x3c]
+          new_magic = new[0x38:0x3c]
 
-          new_magic = \
-              new[0x38:0x3c]
-
-          print(
-              "Original magic:",
-              original_magic.hex()
-          )
-
-          print(
-              "New magic:",
-              new_magic.hex()
-          )
+          print("Original magic:", original_magic.hex())
+          print("New magic:", new_magic.hex())
 
           if original_magic != b'ARM\x64':
               raise SystemExit(
@@ -1301,19 +1224,10 @@ jobs:
                   "ERROR: new bukan ARM64 Image."
               )
 
-          print(
-              "Original kernel: ARM64 Image"
-          )
-
-          print(
-              "New kernel: ARM64 Image"
-          )
-
-          print(
-              "Kernel format compatible."
-          )
+          print("Original kernel: ARM64 Image")
+          print("New kernel: ARM64 Image")
+          print("Kernel format compatible.")
           PY
-
 
       # ============================================================
       # 29. BACKUP ORIGINAL COMPONENTS
