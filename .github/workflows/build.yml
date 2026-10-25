@@ -106,32 +106,29 @@ jobs:
             CLANG_TRIPLE="$CLANG_TRIPLE" \
             oppo6771_defconfig
 
-          echo "===== LITTLE_CPU_MASK definitions ====="
-          grep -Rni -B 8 -A 12 \
-            'LITTLE_CPU_MASK' \
-            --include='Kconfig*' \
-            . \
-            | head -100 || true
-
-          echo "===== BIG_CPU_MASK definitions ====="
-          grep -Rni -B 8 -A 12 \
-            'BIG_CPU_MASK' \
-            --include='Kconfig*' \
-            . \
-            | head -100 || true
-
-          echo "===== Existing config ====="
-          grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK)' out/.config || true
-
           scripts/config --file out/.config \
             -e CONFIG_KPROBES \
             -e CONFIG_KPROBE_EVENTS \
             -e CONFIG_KSU
 
-          echo "===== KernelSU ====="
-          grep -E 'CONFIG_(KSU|KPROBES|KPROBE_EVENTS)=' out/.config
+          scripts/config --file out/.config \
+            --set-val LITTLE_CPU_MASK 15 \
+            --set-val BIG_CPU_MASK 240
 
-          test -f out/.config
+          echo "Configuration before olddefconfig:"
+          grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config
+
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
+            olddefconfig
+
+          echo "Final configuration:"
+          grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config
+
+          test -f out/include/config/auto.conf
 
       - name: Build kernel
         working-directory: kernel
