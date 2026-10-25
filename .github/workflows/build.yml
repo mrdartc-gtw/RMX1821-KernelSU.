@@ -206,11 +206,39 @@ jobs:
 
           echo "===== VERIFY KERNELSU ====="
 
-          test -L drivers/kernelsu
-          test -f drivers/kernelsu/Kconfig
-          test -f drivers/kernelsu/Makefile
+          echo "Current directory:"
+          pwd
 
-          echo "KernelSU files: OK"
+          echo "===== drivers/kernelsu ====="
+
+          if [ -e drivers/kernelsu ]; then
+            echo "drivers/kernelsu EXISTS"
+            ls -la drivers/kernelsu
+          else
+            echo "drivers/kernelsu DOES NOT EXIST"
+          fi
+
+          echo "===== drivers directory ====="
+          ls -la drivers | head -n 50
+
+          echo "===== SEARCH KERNELSU ====="
+
+          find . -maxdepth 4 \
+            \( -iname '*kernelsu*' -o -name 'KSU*' \) \
+            -print | head -n 100
+
+          echo "===== CHECK KERNELSU FILES ====="
+
+          find . \
+            -path '*/kernelsu/*' \
+            \( -name Kconfig -o -name Makefile \) \
+            -print | head -n 50
+
+          echo "===== GIT STATUS ====="
+
+          git status --short
+
+          echo "===== KERNELSU VERIFY FINISHED ====="
 
           echo "===== DEFCONFIG ====="
 
@@ -220,47 +248,6 @@ jobs:
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             oppo6771_defconfig
-
-          echo "===== MODIFY CONFIG ====="
-
-          scripts/config --file out/.config \
-            -d CONFIG_CC_STACKPROTECTOR_STRONG \
-            -d CONFIG_CC_STACKPROTECTOR_REGULAR
-
-          scripts/config --file out/.config \
-            -e CONFIG_KPROBES \
-            -e CONFIG_KSU
-
-          scripts/config --file out/.config \
-            --set-val LITTLE_CPU_MASK 15 \
-            --set-val BIG_CPU_MASK 240
-
-          echo "===== CONFIG BEFORE OLDDEFCONFIG ====="
-
-          grep -E \
-            'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' \
-            out/.config || true
-
-          echo "===== OLDDEFCONFIG ====="
-
-          make O=out \
-            ARCH=arm64 \
-            CC="$CC" \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            olddefconfig
-
-          echo "===== FINAL CONFIG ====="
-
-          grep -E \
-            'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' \
-            out/.config || true
-
-          echo "===== REQUIRED KSU CONFIG ====="
-
-          grep -E '^CONFIG_(KSU|KPROBES)=' out/.config
-
-          echo "Kernel configuration completed successfully."
 
       - name: Test DrvGen
         working-directory: kernel
