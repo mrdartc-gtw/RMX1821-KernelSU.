@@ -1,0 +1,437 @@
+name: Build RMX1821 KernelSU Boot Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-boot:
+    runs-on: ubuntu-22.04
+
+    steps:
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # 2. DOWNLOAD KERNEL ARTIFACT
+      # ============================================================
+      - name: Download kernel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: RMX1821-KernelSU-Image
+          path: kernel-artifact
+
+      # ============================================================
+      # 3. VERIFY KERNEL
+      # ============================================================
+      - name: Verify kernel
+        run: |
+          set -e
+
+          echo "===== KERNEL ARTIFACT ====="
+
+          find kernel-artifact -type f -maxdepth 3 -print
+
+          test -f kernel-artifact/Image.gz-dtb
+
+          mkdir -p work
+
+          cp \
+            kernel-artifact/Image.gz-dtb \
+            work/Image.gz-dtb
+
+          echo "===== KERNEL SIZE ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            work/Image.gz-dtb
+
+          file work/Image.gz-dtb
+
+      # ============================================================
+      # 4. DOWNLOAD ORIGINAL BOOT
+      # ============================================================
+      - name: Download original boot.img
+        run: |
+          set -e
+
+          echo "===== DOWNLOAD ORIGINAL BOOT ====="
+
+          curl -L --fail --retry 5 \
+            "https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img" \
+            -o work/boot-original.img
+
+          test -f work/boot-original.img
+
+          echo "===== ORIGINAL BOOT ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            work/boot-original.img
+
+          file work/boot-original.img
+
+      # ============================================================
+      # 5. INSTALL BUILD DEPENDENCIES
+      # ============================================================
+      - name: Install dependencies
+        run: |
+          set -e
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            bc \
+            build-essential \
+            clang \
+            curl \
+            git \
+            python3 \
+            python3-pip \
+            unzip \
+            wget \
+            xz-utils \
+            zstd
+
+          echo "===== DEPENDENCIES READY ====="
+
+      # ============================================================
+      # 6. BUILD MAGISKBOOT
+      # ============================================================
+      - name: Build magiskboot
+        run: |
+          set -e
+
+          echo "===== CLONE MAGISK ====="
+
+          git clone \
+            --depth=1 \
+            --recurse-submodules \
+            https://github.com/topjohnwu/Magisk.git \
+            magisk-source
+
+          cd magisk-source
+
+          git submodule update --init --recursive
+
+          echo "===== BUILD MAGISK NATIVE ====="
+
+          python3 build.py ndk
+
+          python3 build.py native magiskboot
+
+          echo "===== SEARCH MAGISKBOOT ====="
+
+          find . \
+            -type f \
+            -name magiskboot \
+            -print
+
+          MAGISKBOOT="$(find . -type f -name magiskboot | head -1)"
+
+          if [ -z "$MAGISKBOOT" ]; then
+            echo "ERROR: magiskboot tidak ditemukan"
+            exit 1
+          fi
+
+          chmod +x "$MAGISKBOOT"
+
+          cp \
+            "$MAGISKBOOT" \
+            ../work/magiskboot
+
+          cd ..
+
+          test -x work/magiskboot
+
+          echo "===== MAGISKBOOT ====="
+
+          file work/magiskboot
+
+          work/magiskboot --help || true
+
+      # ============================================================
+      # 7. UNPACK ORIGINAL BOOT
+      # ============================================================
+      - name: Unpack original boot
+        working-directory: work
+        run: |
+          set -e
+
+          echo "===== UNPACK ORIGINAL BOOT ====="
+
+          mkdir -p original-unpack
+
+          cd original-unpack
+
+          ../magiskboot unpack ../boot-original.img
+
+          echo "===== UNPACK RESULT ====="
+
+          ls -lah
+
+      # ============================================================
+      # 8. CHECK ORIGINAL BOOT
+      # ============================================================
+      - name: Check original boot structure
+        working-directory: work/original-unpack
+        run: |
+          set -e
+
+          echo "===== ORIGINAL BOOT FILES ====="
+
+          ls -lh
+
+          echo "===== KERNEL ====="
+
+          if [ -f kernel ]; then
+            stat -c '%n = %s bytes' kernel
+          fi
+
+          echo "===== KERNEL DTB ====="
+
+          if [ -f kernel_dtb ]; then
+            stat -c '%n = %s bytes' kernel_dtb
+          fi
+
+          echo "===== RAMDISK ====="
+
+          if [ -f ramdisk.cpio ]; then
+            stat -c '%n = %s bytes' ramdisk.cpio
+          fi
+
+      # ============================================================
+      # 9. EXTRACT NEW KERNEL FROM Image.gz-dtb
+      # ============================================================
+      - name: Extract kernel from Image.gz-dtb
+        working-directory: work
+        run: |
+          set -e
+
+          echo "===== CHECK ORIGINAL DTB ====="
+
+          test -f original-unpack/kernel_dtb
+
+          DTB_SIZE="$(stat -c%s original-unpack/kernel_dtb)"
+
+          IMAGE_SIZE="$(stat -c%s Image.gz-dtb)"
+
+          echo "Image.gz-dtb size = $IMAGE_SIZE"
+          echo "Original DTB size  = $DTB_SIZE"
+
+          if [ "$IMAGE_SIZE" -le "$DTB_SIZE" ]; then
+            echo "ERROR: Image.gz-dtb lebih kecil dari DTB"
+            exit 1
+          fi
+
+          KERNEL_GZ_SIZE=$((IMAGE_SIZE - DTB_SIZE))
+
+          echo "New kernel gzip size = $KERNEL_GZ_SIZE"
+
+          echo "===== EXTRACT NEW KERNEL GZIP ====="
+
+          dd \
+            if=Image.gz-dtb \
+            of=new-kernel.gz \
+            bs=1 \
+            count="$KERNEL_GZ_SIZE" \
+            status=progress
+
+          echo "===== VERIFY GZIP ====="
+
+          gzip -t new-kernel.gz
+
+          echo "New kernel gzip is valid."
+
+          echo "===== DECOMPRESS KERNEL ====="
+
+          gzip -dc \
+            new-kernel.gz \
+            > new-kernel
+
+          test -s new-kernel
+
+          echo "===== NEW KERNEL ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            new-kernel
+
+          file new-kernel
+
+      # ============================================================
+      # 10. REPLACE ONLY KERNEL
+      # ============================================================
+      - name: Replace kernel only
+        working-directory: work
+        run: |
+          set -e
+
+          echo "===== REPLACE KERNEL ====="
+
+          cp \
+            new-kernel \
+            original-unpack/kernel
+
+          echo "===== VERIFY PRESERVED FILES ====="
+
+          test -f original-unpack/kernel
+          test -f original-unpack/kernel_dtb
+          test -f original-unpack/ramdisk.cpio
+
+          echo "Kernel replaced."
+
+          echo "DTB:"
+          stat -c '%n = %s bytes' original-unpack/kernel_dtb
+
+          echo "Ramdisk:"
+          stat -c '%n = %s bytes' original-unpack/ramdisk.cpio
+
+          echo "New kernel:"
+          stat -c '%n = %s bytes' original-unpack/kernel
+
+      # ============================================================
+      # 11. REPACK BOOT
+      # ============================================================
+      - name: Repack KernelSU boot image
+        working-directory: work/original-unpack
+        run: |
+          set -e
+
+          echo "===== REPACK BOOT ====="
+
+          ../magiskboot repack \
+            ../boot-original.img \
+            ../boot-kernelsu.img
+
+          test -f ../boot-kernelsu.img
+
+          echo "===== BOOT IMAGE CREATED ====="
+
+          stat \
+            -c '%n = %s bytes' \
+            ../boot-kernelsu.img
+
+          file ../boot-kernelsu.img
+
+      # ============================================================
+      # 12. VERIFY REPACKED BOOT
+      # ============================================================
+      - name: Verify repacked boot
+        working-directory: work
+        run: |
+          set -e
+
+          echo "===== VERIFY BOOT ====="
+
+          test -s boot-kernelsu.img
+
+          echo "Boot image size:"
+          stat \
+            -c '%s bytes' \
+            boot-kernelsu.img
+
+          echo "===== UNPACK REPACKED BOOT ====="
+
+          mkdir -p verify
+
+          cd verify
+
+          ../magiskboot unpack ../boot-kernelsu.img
+
+          echo "===== REPACKED BOOT CONTENT ====="
+
+          ls -lh
+
+      # ============================================================
+      # 13. COMPARE DTB
+      # ============================================================
+      - name: Verify DTB unchanged
+        working-directory: work
+        run: |
+          set -e
+
+          echo "===== COMPARE DTB ====="
+
+          sha256sum \
+            original-unpack/kernel_dtb \
+            verify/kernel_dtb
+
+          cmp \
+            original-unpack/kernel_dtb \
+            verify/kernel_dtb
+
+          echo "DTB unchanged: OK"
+
+      # ============================================================
+      # 14. COMPARE RAMDISK
+      # ============================================================
+      - name: Verify ramdisk unchanged
+        working-directory: work
+        run: |
+          set -e
+
+          echo "===== COMPARE RAMDISK ====="
+
+          sha256sum \
+            original-unpack/ramdisk.cpio \
+            verify/ramdisk.cpio
+
+          cmp \
+            original-unpack/ramdisk.cpio \
+            verify/ramdisk.cpio
+
+          echo "Ramdisk unchanged: OK"
+
+      # ============================================================
+      # 15. VERIFY BOOT HEADER
+      # ============================================================
+      - name: Verify boot image header
+        working-directory: work/verify
+        run: |
+          set -e
+
+          echo "===== BOOT HEADER ====="
+
+          ../magiskboot unpack ../boot-kernelsu.img
+
+          echo "===== VERIFY COMPLETE ====="
+
+          ls -lah
+
+      # ============================================================
+      # 16. SHA256
+      # ============================================================
+      - name: Generate checksums
+        working-directory: work
+        run: |
+          set -e
+
+          echo "===== SHA256 ====="
+
+          sha256sum \
+            boot-original.img \
+            boot-kernelsu.img \
+            Image.gz-dtb \
+            new-kernel
+
+          sha256sum \
+            boot-kernelsu.img \
+            > boot-kernelsu.img.sha256
+
+      # ============================================================
+      # 17. UPLOAD FINAL BOOT
+      # ============================================================
+      - name: Upload KernelSU boot image
+        uses: actions/upload-artifact@v4
+        with:
+          name: RMX1821-KernelSU-Boot
+          path: |
+            work/boot-kernelsu.img
+            work/boot-kernelsu.img.sha256
+            work/Image.gz-dtb
+            work/new-kernel
+          if-no-files-found: error
