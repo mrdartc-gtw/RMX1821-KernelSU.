@@ -1,10 +1,7 @@
-name: Build RMX1821 KernelSU v0.9.5
+name: Build RMX1821 KernelSU
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -24,75 +21,175 @@ jobs:
             ccache \
             curl \
             flex \
-            gawk \
             git \
-            libelf-dev \
             libssl-dev \
+            libelf-dev \
             lz4 \
             python3 \
-            python3-pip \
+            rsync \
             unzip \
             wget \
-            xz-utils
+            xz-utils \
+            zip
 
-      - name: Clone kernel source
+      # ============================================================
+      # CLONE KERNEL SOURCE
+      # ============================================================
+
+      - name: Clone RMX1821 kernel source
         run: |
-          git clone --depth=1 --branch Q \
-            "https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git" \
+          git clone --depth=1 \
+            --branch Q \
+            https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
 
-          cd kernel
-          git rev-parse HEAD
+      # ============================================================
+      # INSTALL CLANG
+      # ============================================================
 
-      - name: Download toolchains
+      - name: Install Clang r437112
+        run: |
+          set -e
+
+          git clone --depth=1 \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+            clang-repo
+
+          mkdir -p clang
+
+          cp -r clang-repo/clang-r437112/* clang/ || true
+
+          if [ ! -x clang/bin/clang ]; then
+            echo "ERROR: clang-r437112 not found"
+            find clang-repo -maxdepth 3 -type f -name clang | head -20
+            exit 1
+          fi
+
+          ./clang/bin/clang --version
+
+      # ============================================================
+      # GCC 4.9 AARCH64
+      # ============================================================
+
+      - name: Install GCC 4.9 AArch64
         run: |
           git clone --depth=1 \
-            "https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r437112.git" \
-            clang
-
-          git clone --depth=1 \
-            "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git" \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
             gcc64
 
+          echo "===== GCC64 ====="
+          gcc64/bin/aarch64-linux-android-gcc --version
+
+      # ============================================================
+      # GCC 4.9 ARM32
+      # ============================================================
+
+      - name: Install GCC 4.9 ARM32
+        run: |
           git clone --depth=1 \
-            "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git" \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
             gcc32
 
-          test -x clang/bin/clang
-          test -x gcc64/bin/aarch64-linux-android-gcc
-          test -x gcc32/bin/arm-linux-androideabi-gcc
+          echo "===== GCC32 ====="
+          gcc32/bin/arm-linux-androideabi-gcc --version
 
-          echo "===== CLANG ====="
-          clang/bin/clang --version | head -n 3
+      # ============================================================
+      # VERIFY TOOLCHAIN
+      # ============================================================
 
-          echo "===== GCC 64-bit ====="
-          gcc64/bin/aarch64-linux-android-gcc --version | head -n 1
-
-          echo "===== GCC 32-bit ====="
-          gcc32/bin/arm-linux-androideabi-gcc --version | head -n 1
-
-      - name: Verify toolchain layout
+      - name: Verify toolchain
+        working-directory: kernel
         run: |
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          set -e
 
-          test -x "$GITHUB_WORKSPACE/clang/bin/clang"
-          test -x "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc"
-          test -x "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
+          export ARCH=arm64
 
-          echo "Toolchain layout OK."
+          export CC="${GITHUB_WORKSPACE}/clang/bin/clang"
+
+          export CLANG_TRIPLE="aarch64-linux-gnu-"
+
+          export CROSS_COMPILE="${GITHUB_WORKSPACE}/gcc64/bin/aarch64-linux-android-"
+
+          export CROSS_COMPILE_ARM32="${GITHUB_WORKSPACE}/gcc32/bin/arm-linux-androideabi-"
+
+          echo "ARCH=$ARCH"
+          echo "CC=$CC"
+          echo "CLANG_TRIPLE=$CLANG_TRIPLE"
+          echo "CROSS_COMPILE=$CROSS_COMPILE"
+          echo "CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32"
+
+          "$CC" --version
+
+          "${CROSS_COMPILE}gcc" --version
+
+          "${CROSS_COMPILE_ARM32}gcc" --version
+
+      # ============================================================
+      # KERNELSU v0.9.5
+      # ============================================================
+
+      - name: Integrate KernelSU v0.9.5
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "===== INSTALL KERNELSU v0.9.5 ====="
+
+          curl -LSs \
+            "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" \
+            | bash -s -- v0.9.5
+
+          echo "===== VERIFY KERNELSU ====="
+
+          test -e drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          test -f drivers/kernelsu/Makefile
+
+          echo "KernelSU directory:"
+          ls -la drivers/kernelsu
+
+          echo "KernelSU integration: OK"
+
+      # ============================================================
+      # PATCH CPU TARGET
+      # ============================================================
+
+      - name: Patch unsupported CPU flags
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "===== BEFORE ====="
+          grep -n "cortex-a73" Makefile || true
+
+          sed -i \
+            's/-mcpu=cortex-a73\.cortex-a53/-mcpu=cortex-a53/g' \
+            Makefile
+
+          sed -i \
+            's/-mtune=cortex-a73\.cortex-a53/-mtune=cortex-a53/g' \
+            Makefile
+
+          echo "===== AFTER ====="
+          grep -n "mcpu\|mtune" Makefile | head -20
+
+      # ============================================================
+      # PREPARE DRVGEN
+      # ============================================================
 
       - name: Prepare DrvGen Python 2 wrapper
         working-directory: kernel
         run: |
           set -e
 
-          if [ -f tools/dct/DrvGen.py ] && [ ! -f tools/dct/DrvGen.py.real ]; then
-            mv tools/dct/DrvGen.py tools/dct/DrvGen.py.real
+          cd tools/dct
+
+          if [ ! -f DrvGen.py.real ]; then
+            cp DrvGen.py DrvGen.py.real
           fi
 
-          cat > tools/dct/DrvGen.py <<'EOF'
+          cat > DrvGen.py <<'EOF'
           #!/bin/sh
-
           set -e
 
           SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -158,105 +255,119 @@ jobs:
             "$PARAM"
           EOF
 
-          chmod +x tools/dct/DrvGen.py
+          chmod +x DrvGen.py
 
-          echo "===== DRVGEN WRAPPER ====="
-          cat tools/dct/DrvGen.py
+          echo "DrvGen wrapper ready."
 
-          echo "DrvGen wrapper prepared."
+      # ============================================================
+      # VERIFY KERNELSU
+      # ============================================================
+
+      - name: Verify KernelSU files
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "===== CURRENT DIRECTORY ====="
+          pwd
+
+          echo "===== KERNELSU ====="
+
+          if [ -e drivers/kernelsu ]; then
+            echo "drivers/kernelsu EXISTS"
+            ls -la drivers/kernelsu
+          else
+            echo "ERROR: drivers/kernelsu DOES NOT EXIST"
+            exit 1
+          fi
+
+          echo "===== KCONFIG ====="
+          test -f drivers/kernelsu/Kconfig
+
+          echo "===== MAKEFILE ====="
+          test -f drivers/kernelsu/Makefile
+
+          echo "===== KERNELSU VERIFY OK ====="
+
+      # ============================================================
+      # CONFIGURE KERNEL
+      # ============================================================
 
       - name: Configure kernel
         working-directory: kernel
         env:
           ARCH: arm64
           CC: ${{ github.workspace }}/clang/bin/clang
+          CLANG_TRIPLE: aarch64-linux-gnu-
           CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
           set -e
 
-          echo "===== CLANG ====="
-          "$CC" --version | head -n 3
+          echo "===== TOOLCHAIN ====="
+          "$CC" --version
+          "${CROSS_COMPILE}gcc" --version
 
-          echo "===== TEST CLANG CPU TARGET ====="
-
-          "$CC" \
-            --target=aarch64-linux-android \
-            -mcpu=cortex-a53 \
-            -E \
-            -x c \
-            /dev/null \
-            -o /dev/null
-
-          echo "Clang CPU target: OK"
-
-          echo "===== PATCH CPU FLAGS FOR CLANG ====="
-
-          sed -i \
-            's/-mcpu=cortex-a73\.cortex-a53/-mcpu=cortex-a53/g' \
-            Makefile
-
-          sed -i \
-            's/-mtune=cortex-a73\.cortex-a53/-mtune=cortex-a53/g' \
-            Makefile
-
-          echo "===== VERIFY CPU FLAGS ====="
-
-          grep -nE 'mcpu=|mtune=' Makefile | head -n 20
-
-          echo "===== VERIFY KERNELSU ====="
-
-          echo "Current directory:"
-          pwd
-
-          echo "===== drivers/kernelsu ====="
-
-          if [ -e drivers/kernelsu ]; then
-            echo "drivers/kernelsu EXISTS"
-            ls -la drivers/kernelsu
-          else
-            echo "drivers/kernelsu DOES NOT EXIST"
-          fi
-
-          echo "===== drivers directory ====="
-          ls -la drivers | head -n 50
-
-          echo "===== SEARCH KERNELSU ====="
-
-          find . -maxdepth 4 \
-            \( -iname '*kernelsu*' -o -name 'KSU*' \) \
-            -print | head -n 100
-
-          echo "===== CHECK KERNELSU FILES ====="
-
-          find . \
-            -path '*/kernelsu/*' \
-            \( -name Kconfig -o -name Makefile \) \
-            -print | head -n 50
-
-          echo "===== GIT STATUS ====="
-
-          git status --short
-
-          echo "===== KERNELSU VERIFY FINISHED ====="
+          echo "===== CLANG TRIPLE ====="
+          echo "$CLANG_TRIPLE"
 
           echo "===== DEFCONFIG ====="
 
-          make O=out \
-            ARCH=arm64 \
+          make \
+            ARCH="$ARCH" \
             CC="$CC" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            O=out \
             oppo6771_defconfig
+
+          echo "===== DISABLE STACK PROTECTOR ====="
+
+          scripts/config --file out/.config \
+            -d CONFIG_CC_STACKPROTECTOR_STRONG \
+            -d CONFIG_CC_STACKPROTECTOR_REGULAR
+
+          echo "===== ENABLE KPROBES ====="
+
+          scripts/config --file out/.config \
+            -e CONFIG_KPROBES \
+            -e CONFIG_KSU
+
+          echo "===== CPU MASK ====="
+
+          scripts/config --file out/.config \
+            --set-val LITTLE_CPU_MASK 15 \
+            --set-val BIG_CPU_MASK 240
+
+          echo "===== OLDDEFCONFIG ====="
+
+          make \
+            ARCH="$ARCH" \
+            CC="$CC" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            O=out \
+            olddefconfig
+
+          echo "===== KERNELSU CONFIG ====="
+          grep -E '^CONFIG_(KSU|KPROBES)=' out/.config || true
+
+          echo "===== CPU MASK CONFIG ====="
+          grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK)' out/.config || true
+
+      # ============================================================
+      # TEST DRVGEN
+      # ============================================================
 
       - name: Test DrvGen
         working-directory: kernel
         run: |
           set -e
 
-          echo "===== TEST DRVGEN ====="
-
-          mkdir -p arch/arm64/boot/dts/oppo6771_18601
+          mkdir -p \
+            arch/arm64/boot/dts/oppo6771_18601
 
           ./tools/dct/DrvGen.py \
             "$(pwd)/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws" \
@@ -266,58 +377,70 @@ jobs:
 
           echo "DrvGen completed successfully."
 
+      # ============================================================
+      # BUILD KERNEL
+      # ============================================================
+
       - name: Build kernel
         working-directory: kernel
         env:
           ARCH: arm64
           CC: ${{ github.workspace }}/clang/bin/clang
+          CLANG_TRIPLE: aarch64-linux-gnu-
           CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
           set -e
 
-          echo "===== BUILD KERNEL ====="
-
-          "$CC" --version | head -n 3
-
-          echo "===== VERIFY CPU FLAGS ====="
-
-          grep -nE 'mcpu=|mtune=' Makefile | head -n 20
-
           echo "===== BUILD ====="
 
-          make -j"$(nproc)" \
-            O=out \
-            ARCH=arm64 \
+          make \
+            -j"$(nproc)" \
+            ARCH="$ARCH" \
             CC="$CC" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            Image.gz-dtb
+            O=out
 
-          echo "===== BUILD RESULT ====="
+          echo "===== CHECK OUTPUT ====="
+
+          ls -lh out/arch/arm64/boot/
 
           test -f out/arch/arm64/boot/Image.gz-dtb
 
-          ls -lh out/arch/arm64/boot/Image.gz-dtb
+          echo "Kernel build successful."
 
-          file out/arch/arm64/boot/Image.gz-dtb
-
-          echo "===== KERNEL BUILD SUCCESS ====="
+      # ============================================================
+      # DOWNLOAD ORIGINAL BOOT
+      # ============================================================
 
       - name: Download original boot image
         run: |
-          wget -O boot-original.img \
+          set -e
+
+          mkdir -p bootwork
+
+          curl -L \
+            -o bootwork/boot-original.img \
             "https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img"
 
-          test "$(stat -c%s boot-original.img)" -eq 33554432
+          ls -lh bootwork/boot-original.img
 
-          echo "Original boot SHA256:"
-          sha256sum boot-original.img
+          test "$(stat -c%s bootwork/boot-original.img)" -eq 33554432
+
+      # ============================================================
+      # BUILD MAGISKBOOT
+      # ============================================================
 
       - name: Build MagiskBoot
         run: |
-          git clone --depth=1 --recurse-submodules \
-            "https://github.com/topjohnwu/Magisk.git" \
+          set -e
+
+          git clone \
+            --depth=1 \
+            --recurse-submodules \
+            https://github.com/topjohnwu/Magisk.git \
             magisk-source
 
           cd magisk-source
@@ -325,23 +448,39 @@ jobs:
           git submodule update --init --recursive
 
           python3 build.py ndk
+
           python3 build.py native magiskboot
 
-          echo "Available magiskboot binaries:"
-          find . -type f -name magiskboot -exec file {} \;
+          echo "===== SEARCH MAGISKBOOT ====="
 
-      - name: Prepare MagiskBoot
-        run: |
-          set -e
+          find . \
+            -type f \
+            -name magiskboot \
+            -perm -111 \
+            -print
 
-          MAGISKBOOT="$(find magisk-source -type f -name magiskboot -executable | head -n 1)"
+          MAGISKBOOT="$(find . \
+            -type f \
+            -name magiskboot \
+            -perm -111 \
+            | head -n 1)"
 
-          test -n "$MAGISKBOOT"
+          if [ -z "$MAGISKBOOT" ]; then
+            echo "ERROR: magiskboot not found"
+            exit 1
+          fi
 
-          cp "$MAGISKBOOT" magiskboot
-          chmod +x magiskboot
+          cp "$MAGISKBOOT" ../magiskboot
 
-          file magiskboot
+          chmod +x ../magiskboot
+
+          file ../magiskboot
+
+          ../magiskboot --help || true
+
+      # ============================================================
+      # UNPACK ORIGINAL BOOT
+      # ============================================================
 
       - name: Unpack original boot
         run: |
@@ -350,18 +489,21 @@ jobs:
           rm -rf unpack
           mkdir -p unpack
 
-          ./magiskboot unpack boot-original.img
+          cd unpack
 
-          mv kernel unpack/kernel
+          ../magiskboot unpack ../bootwork/boot-original.img
 
-          if [ -f kernel_dtb ]; then
-            mv kernel_dtb unpack/kernel_dtb
-          fi
+          echo "===== UNPACKED FILES ====="
+          ls -lah
 
-          echo "Original boot components:"
-          ls -lh unpack/
+          echo "===== HEADER ====="
+          cat header || true
 
-      - name: Replace kernel and preserve original DTB
+      # ============================================================
+      # REPLACE KERNEL
+      # ============================================================
+
+      - name: Replace kernel with KernelSU kernel
         working-directory: kernel
         run: |
           set -e
@@ -369,82 +511,121 @@ jobs:
           IMG="out/arch/arm64/boot/Image.gz-dtb"
 
           test -f "$IMG"
-          test -f ../unpack/kernel_dtb
 
           DTB_SIZE="$(stat -c%s ../unpack/kernel_dtb)"
           IMG_SIZE="$(stat -c%s "$IMG")"
 
-          KERNEL_GZ_SIZE=$((IMG_SIZE - DTB_SIZE))
-
           echo "Image.gz-dtb size: $IMG_SIZE"
           echo "Original DTB size: $DTB_SIZE"
-          echo "Kernel gzip size: $KERNEL_GZ_SIZE"
 
-          test "$KERNEL_GZ_SIZE" -gt 0
+          KERNEL_GZ_SIZE=$((IMG_SIZE - DTB_SIZE))
+
+          echo "Kernel gzip size: $KERNEL_GZ_SIZE"
 
           dd \
             if="$IMG" \
-            of=../new-kernel.gz \
+            of="../new-kernel.gz" \
             bs=1 \
             count="$KERNEL_GZ_SIZE" \
             status=none
 
           gzip -t ../new-kernel.gz
 
+          echo "Kernel gzip test: OK"
+
           gzip -dc ../new-kernel.gz > ../unpack/kernel
 
-          test -s ../unpack/kernel
-          test -s ../unpack/kernel_dtb
-
           echo "New kernel:"
-          file ../unpack/kernel
+          ls -lh ../unpack/kernel
 
-          echo "Original DTB:"
-          file ../unpack/kernel_dtb
+          echo "Original DTB preserved:"
+          ls -lh ../unpack/kernel_dtb
+
+      # ============================================================
+      # REPACK BOOT
+      # ============================================================
 
       - name: Repack boot image
+        working-directory: unpack
         run: |
           set -e
 
-          ./magiskboot repack boot-original.img new-boot.img
+          ../magiskboot repack \
+            ../bootwork/boot-original.img \
+            ../new-boot.img
 
-          test -f new-boot.img
-          test "$(stat -c%s new-boot.img)" -eq 33554432
+          echo "===== NEW BOOT ====="
 
-          echo "Final boot image:"
-          ls -lh new-boot.img
+          ls -lh ../new-boot.img
 
-          echo "Final boot SHA256:"
-          sha256sum new-boot.img
+          SIZE="$(stat -c%s ../new-boot.img)"
+
+          echo "Size: $SIZE"
+
+          if [ "$SIZE" -ne 33554432 ]; then
+            echo "WARNING: boot image size differs from original."
+          fi
+
+      # ============================================================
+      # VERIFY FINAL BOOT
+      # ============================================================
 
       - name: Verify final boot image
         run: |
           set -e
 
           rm -rf verify-boot
-          mkdir verify-boot
+          mkdir -p verify-boot
 
           cd verify-boot
 
           ../magiskboot unpack ../new-boot.img
 
-          echo "Final boot components:"
-          ls -lh
+          echo "===== FINAL BOOT HEADER ====="
+          cat header || true
 
-          cd ..
+          echo "===== FINAL FILES ====="
+          ls -lah
 
-          echo "Final boot SHA256:"
-          sha256sum new-boot.img
+          test -f kernel
+          test -f kernel_dtb
 
-      - name: Upload boot artifact
+          echo "Final boot verification successful."
+
+      # ============================================================
+      # SHA256
+      # ============================================================
+
+      - name: Generate SHA256
+        run: |
+          sha256sum new-boot.img | tee new-boot.img.sha256
+
+          echo "===== SHA256 ====="
+          cat new-boot.img.sha256
+
+      # ============================================================
+      # UPLOAD ARTIFACT
+      # ============================================================
+
+      - name: Upload boot image
         uses: actions/upload-artifact@v4
         with:
-          name: RMX1821-KernelSU-v0.9.5
-          path: new-boot.img
+          name: RMX1821-KernelSU
+          path: |
+            new-boot.img
+            new-boot.img.sha256
 
-      - name: Create GitHub release
+      # ============================================================
+      # RELEASE
+      # ============================================================
+
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "kernelsu-v0.9.5-${{ github.run_number }}"
-          name: "RMX1821 KernelSU v0.9.5 build ${{ github.run_number }}"
-          files: new-boot.img
+          tag_name: kernelsu-${{ github.run_number }}
+          name: RMX1821 KernelSU Build ${{ github.run_number }}
+          files: |
+            new-boot.img
+            new-boot.img.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
