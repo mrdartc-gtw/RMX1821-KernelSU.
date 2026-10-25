@@ -668,53 +668,52 @@ jobs:
       # 21. BUILD MAGISKBOOT HOST
       # ============================================================
 
-      - name: Build MagiskBoot host
-        working-directory: Magisk
-        run: |
-          set -e
+- name: Build MagiskBoot
+  working-directory: Magisk
+  run: |
+    set -e
 
-          echo "========================================"
-          echo "BUILD MAGISKBOOT"
-          echo "========================================"
+    echo "========================================"
+    echo "BUILD MAGISKBOOT"
+    echo "========================================"
 
-          python3 build.py \
-            native \
-            --release
+    python3 build.py native
 
-          echo
-          echo "Searching for magiskboot..."
+    echo
+    echo "Searching for magiskboot..."
 
-          find native \
-            -type f \
-            -name magiskboot \
-            -print
+    find native \
+      -type f \
+      -name magiskboot \
+      -print
 
-          echo
-          echo "Checking x86_64 binary..."
+    echo
+    echo "Checking x86_64 binary..."
 
-          HOST_MAGISKBOOT="native/out/x86_64/magiskboot"
+    HOST_MAGISKBOOT="native/out/x86_64/magiskboot"
 
-          if [ ! -f "$HOST_MAGISKBOOT" ]; then
-            echo "ERROR: x86_64 magiskboot tidak ditemukan."
-            exit 1
-          fi
+    if [ ! -f "$HOST_MAGISKBOOT" ]; then
+      echo "ERROR: x86_64 magiskboot tidak ditemukan."
+      exit 1
+    fi
 
-          file "$HOST_MAGISKBOOT"
+    echo
+    echo "File information:"
+    file "$HOST_MAGISKBOOT"
 
-          if ! file "$HOST_MAGISKBOOT" | grep -q "x86-64"; then
-            echo "ERROR: magiskboot bukan x86_64."
-            exit 1
-          fi
+    if ! file "$HOST_MAGISKBOOT" | grep -q "x86-64"; then
+      echo "ERROR: magiskboot bukan x86_64."
+      exit 1
+    fi
 
-          chmod +x "$HOST_MAGISKBOOT"
+    chmod +x "$HOST_MAGISKBOOT"
 
-          echo
-          echo "Testing magiskboot execution..."
+    echo
+    echo "Testing magiskboot execution..."
 
-          "$HOST_MAGISKBOOT" --help >/dev/null 2>&1
+    "$HOST_MAGISKBOOT" --help >/dev/null 2>&1
 
-          echo "MagiskBoot x86_64 OK."
-
+    echo "MagiskBoot x86_64 OK."
 
       # ============================================================
       # 22. COPY MAGISKBOOT
