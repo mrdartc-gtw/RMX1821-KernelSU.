@@ -178,59 +178,60 @@ jobs:
 
           echo "KernelSU integration: OK"
 
-      - name: Fix sched_boost declaration
+      - name: Fix stack_trace incomplete type
         working-directory: kernel
         run: |
           set -e
 
+          echo "===== CHECK stack_trace ====="
+
+          grep -n -B5 -A8 "struct stack_trace" include/linux/netdevice.h
+          grep -n -B5 -A8 "struct stack_trace" include/linux/stacktrace.h || true
+          grep -n -B5 -A8 "struct stack_trace" include/linux/stackdepot.h || true
+
+          echo "===== APPLY stack_trace PATCH ====="
+
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("include/linux/sched.h")
+          p = Path("include/linux/netdevice.h")
           s = p.read_text()
 
-          old = """#ifdef VENDOR_EDIT
+          if '#include <linux/stacktrace.h>' in s:
+              print("stacktrace.h sudah di-include")
+          else:
+              marker = '#include <linux/stackdepot.h>'
 
-          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
-          extern bool sched_boost(void);"""
+              if marker in s:
+                  s = s.replace(
+                      marker,
+                      marker + '\n#include <linux/stacktrace.h>',
+                      1
+                  )
+                  print("Added linux/stacktrace.h after stackdepot.h")
+              else:
+                  marker = '#include <linux/types.h>'
 
-          new = """#ifdef VENDOR_EDIT
+                  if marker not in s:
+                      raise SystemExit(
+                          "ERROR: tidak menemukan lokasi include yang aman"
+                      )
 
-          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
-          #ifdef CONFIG_MTK_SCHED_BOOST
-          extern bool sched_boost(void);
-          #endif"""
+                  s = s.replace(
+                      marker,
+                      marker + '\n#include <linux/stacktrace.h>',
+                      1
+                  )
+                  print("Added linux/stacktrace.h after types.h")
 
-          if old not in s:
-              raise SystemExit("ERROR: first sched_boost declaration block tidak ditemukan")
-
-          s = s.replace(old, new, 1)
-
-          old = """#ifdef VENDOR_EDIT
-          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
-          extern bool sched_boost(void);
-          extern int sched_set_updown_migrate(unsigned int up_migrate,unsigned int down_migrate);"""
-
-          new = """#ifdef VENDOR_EDIT
-          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
-          #ifdef CONFIG_MTK_SCHED_BOOST
-          extern bool sched_boost(void);
-          #endif
-          extern int sched_set_updown_migrate(unsigned int up_migrate,unsigned int down_migrate);"""
-
-          if old not in s:
-              raise SystemExit("ERROR: second sched_boost declaration block tidak ditemukan")
-
-          s = s.replace(old, new, 1)
-
-          p.write_text(s)
-
-          print("OK: sched_boost declarations guarded by CONFIG_MTK_SCHED_BOOST")
+              p.write_text(s)
           PY
 
-          echo "===== VERIFY sched_boost ====="
-          grep -n -B5 -A12 "sched_boost" include/linux/sched.h
-          grep -n -B5 -A12 "sched_boost" include/linux/sched/sched.h
+          echo "===== VERIFY ====="
+
+          grep -n "stacktrace.h" include/linux/netdevice.h
+
+          echo "stack_trace patch OK"
 
       # ============================================================
       # PATCH CPU TARGET
@@ -458,6 +459,20 @@ jobs:
             cust_dtsi
 
           echo "DrvGen completed successfully."
+
+      - name: Reconfigure after header patches
+        working-directory: kernel
+        run: |
+          set -e
+
+          make \
+            ARCH="$ARCH" \
+            CC="$CC" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            O=out \
+            olddefconfig
 
       # ============================================================
       # BUILD KERNEL
