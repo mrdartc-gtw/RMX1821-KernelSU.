@@ -778,9 +778,12 @@ jobs:
           test -f native/src/external/cxx-rs/Cargo.toml
 
           echo
-          echo "Building Magisk native tools..."
+          echo "Building MagiskBoot only..."
 
-          python3 build.py native
+          python3 build.py \
+            -vr \
+            native \
+            magiskboot
 
           echo
           echo "Searching for magiskboot..."
@@ -791,7 +794,7 @@ jobs:
             -print
 
           echo
-          echo "Checking x86_64 binary..."
+          echo "Checking x86_64 MagiskBoot..."
 
           HOST_MAGISKBOOT="native/out/x86_64/magiskboot"
 
