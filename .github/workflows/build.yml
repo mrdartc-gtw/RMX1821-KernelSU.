@@ -8,12 +8,22 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout workflow repository
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ============================================================
+      # 2. INSTALL DEPENDENCIES
+      # ============================================================
       - name: Install dependencies
         run: |
+          set -e
+
           sudo apt-get update
+
           sudo apt-get install -y \
             bc \
             bison \
@@ -22,31 +32,22 @@ jobs:
             curl \
             flex \
             git \
-            libssl-dev \
             libelf-dev \
-            lz4 \
+            libncurses5-dev \
+            libssl-dev \
             python3 \
             rsync \
             unzip \
             wget \
             xz-utils \
-            zip
+            zstd
+
+          docker --version
+          python3 --version
 
       # ============================================================
-      # CLONE KERNEL SOURCE
+      # 3. CLANG r437112b
       # ============================================================
-
-      - name: Clone RMX1821 kernel source
-        run: |
-          git clone --depth=1 \
-            --branch Q \
-            https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
-            kernel
-
-      # ============================================================
-      # INSTALL CLANG r437112b
-      # ============================================================
-
       - name: Install Clang r437112b
         run: |
           set -e
@@ -59,92 +60,103 @@ jobs:
             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/98603376816dd5a1fbb960856438124d4c618158/clang-r437112b.tar.gz" \
             -o clang-r437112b.tar.gz
 
-          echo "===== DOWNLOAD COMPLETE ====="
-
-          ls -lh clang-r437112b.tar.gz
-
           echo "===== EXTRACT CLANG ====="
 
           tar -xzf clang-r437112b.tar.gz -C clang
 
           rm -f clang-r437112b.tar.gz
 
-          echo "===== CHECK CLANG DIRECTORY ====="
-
-          ls -lah clang | head -30
-
           echo "===== VERIFY CLANG ====="
 
-          if [ ! -x clang/bin/clang ]; then
-            echo "ERROR: clang/bin/clang tidak ditemukan"
-
-            echo "===== SEARCH CLANG ====="
-            find clang -type f -name clang -print
-
-            echo "===== DIRECTORY TREE ====="
-            find clang -maxdepth 2 -type d -print | head -50
-
-            exit 1
-          fi
+          test -x clang/bin/clang
 
           chmod +x clang/bin/clang
 
-          echo "===== CLANG VERSION ====="
-
           ./clang/bin/clang --version
 
-          echo "===== CLANG r437112b READY ====="
+          echo "===== CLANG READY ====="
 
       # ============================================================
-      # GCC 4.9 AARCH64
+      # 4. GCC 4.9 AARCH64
       # ============================================================
-
       - name: Install GCC 4.9 AArch64
         run: |
+          set -e
+
+          echo "===== CLONE GCC 4.9 AARCH64 ====="
+
           git clone --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
             gcc64
 
+          test -x gcc64/bin/aarch64-linux-android-gcc
+
           echo "===== GCC64 ====="
+
           gcc64/bin/aarch64-linux-android-gcc --version
 
       # ============================================================
-      # GCC 4.9 ARM32
+      # 5. GCC 4.9 ARM32
       # ============================================================
-
       - name: Install GCC 4.9 ARM32
         run: |
+          set -e
+
+          echo "===== CLONE GCC 4.9 ARM32 ====="
+
           git clone --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
             gcc32
 
+          test -x gcc32/bin/arm-linux-androideabi-gcc
+
           echo "===== GCC32 ====="
+
           gcc32/bin/arm-linux-androideabi-gcc --version
 
       # ============================================================
-      # VERIFY TOOLCHAIN
+      # 6. DEFINE TOOLCHAIN
       # ============================================================
+      - name: Configure toolchain
+        run: |
+          set -e
 
+          echo "===== TOOLCHAIN ====="
+
+          echo "ARCH=arm64" >> "$GITHUB_ENV"
+
+          echo "CC=${{ github.workspace }}/clang/bin/clang" >> "$GITHUB_ENV"
+
+          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> "$GITHUB_ENV"
+
+          echo "CROSS_COMPILE=${{ github.workspace }}/gcc64/bin/aarch64-linux-android-" >> "$GITHUB_ENV"
+
+          echo "CROSS_COMPILE_ARM32=${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-" >> "$GITHUB_ENV"
+
+          echo "===== TOOLCHAIN CONFIGURED ====="
+
+      # ============================================================
+      # 7. VERIFY TOOLCHAIN
+      # ============================================================
       - name: Verify toolchain
-        working-directory: kernel
         run: |
           set -e
 
           export ARCH=arm64
-
-          export CC="${GITHUB_WORKSPACE}/clang/bin/clang"
-
-          export CLANG_TRIPLE="aarch64-linux-gnu-"
-
-          export CROSS_COMPILE="${GITHUB_WORKSPACE}/gcc64/bin/aarch64-linux-android-"
-
-          export CROSS_COMPILE_ARM32="${GITHUB_WORKSPACE}/gcc32/bin/arm-linux-androideabi-"
+          export CC="${{ github.workspace }}/clang/bin/clang"
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
+          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
 
           echo "ARCH=$ARCH"
           echo "CC=$CC"
           echo "CLANG_TRIPLE=$CLANG_TRIPLE"
           echo "CROSS_COMPILE=$CROSS_COMPILE"
           echo "CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32"
+
+          test -x "$CC"
+          test -x "${CROSS_COMPILE}gcc"
+          test -x "${CROSS_COMPILE_ARM32}gcc"
 
           "$CC" --version
 
@@ -153,9 +165,32 @@ jobs:
           "${CROSS_COMPILE_ARM32}gcc" --version
 
       # ============================================================
-      # KERNELSU v0.9.5
+      # 8. PATCH CPU TARGET
       # ============================================================
+      - name: Fix CPU target
+        working-directory: kernel
+        run: |
+          set -e
 
+          echo "===== PATCH CPU TARGET ====="
+
+          sed -i \
+            's/-mcpu=cortex-a73\.cortex-a53/-mcpu=cortex-a53/g' \
+            Makefile
+
+          sed -i \
+            's/-mtune=cortex-a73\.cortex-a53/-mtune=cortex-a53/g' \
+            Makefile
+
+          echo "===== VERIFY CPU TARGET ====="
+
+          grep -n \
+            -E 'mcpu=|mtune=' \
+            Makefile | head -30
+
+      # ============================================================
+      # 9. INTEGRATE KERNELSU v0.9.5
+      # ============================================================
       - name: Integrate KernelSU v0.9.5
         working-directory: kernel
         run: |
@@ -173,23 +208,145 @@ jobs:
           test -f drivers/kernelsu/Kconfig
           test -f drivers/kernelsu/Makefile
 
-          echo "KernelSU directory:"
-          ls -la drivers/kernelsu
-
           echo "KernelSU integration: OK"
 
+      # ============================================================
+      # 10. PATCH STACK PROTECTOR
+      # ============================================================
+      - name: Disable unsupported stack protector
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "===== DISABLE STACK PROTECTOR ====="
+
+          mkdir -p out
+
+          if [ -f out/.config ]; then
+            scripts/config \
+              --file out/.config \
+              -d CONFIG_CC_STACKPROTECTOR_STRONG \
+              -d CONFIG_CC_STACKPROTECTOR_REGULAR
+          else
+            echo "out/.config belum ada, dilewati"
+          fi
+
+      # ============================================================
+      # 11. PREPARE CONFIG
+      # ============================================================
+      - name: Prepare kernel config
+        working-directory: kernel
+        run: |
+          set -e
+
+          export ARCH=arm64
+          export CC="${{ github.workspace }}/clang/bin/clang"
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
+          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
+
+          echo "===== PREPARE CONFIG ====="
+
+          mkdir -p out
+
+          if [ ! -f out/.config ]; then
+            echo "ERROR: out/.config tidak ditemukan"
+            exit 1
+          fi
+
+          scripts/config \
+            --file out/.config \
+            -e CONFIG_KPROBES \
+            -e CONFIG_KSU
+
+          scripts/config \
+            --file out/.config \
+            --set-val LITTLE_CPU_MASK 15 \
+            --set-val BIG_CPU_MASK 240
+
+          scripts/config \
+            --file out/.config \
+            -d CONFIG_CC_STACKPROTECTOR_STRONG \
+            -d CONFIG_CC_STACKPROTECTOR_REGULAR
+
+          echo "===== CONFIG CHECK ====="
+
+          grep -E \
+            'CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_LITTLE_CPU_MASK=|CONFIG_BIG_CPU_MASK=' \
+            out/.config || true
+
+      # ============================================================
+      # 12. FIX sched_boost
+      # ============================================================
+      - name: Fix sched_boost declaration
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "===== PATCH sched_boost ====="
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("include/linux/sched.h")
+          s = p.read_text()
+
+          old1 = """#ifdef VENDOR_EDIT
+
+          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
+          extern bool sched_boost(void);"""
+
+          new1 = """#ifdef VENDOR_EDIT
+
+          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
+          #ifdef CONFIG_MTK_SCHED_BOOST
+          extern bool sched_boost(void);
+          #endif"""
+
+          if old1 in s:
+              s = s.replace(old1, new1, 1)
+
+          old2 = """#ifdef VENDOR_EDIT
+          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
+          extern bool sched_boost(void);
+          extern int sched_set_updown_migrate(unsigned int up_migrate,unsigned int down_migrate);"""
+
+          new2 = """#ifdef VENDOR_EDIT
+          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
+          #ifdef CONFIG_MTK_SCHED_BOOST
+          extern bool sched_boost(void);
+          #endif
+          extern int sched_set_updown_migrate(unsigned int up_migrate,unsigned int down_migrate);"""
+
+          if old2 in s:
+              s = s.replace(old2, new2, 1)
+
+          p.write_text(s)
+
+          print("sched_boost patch applied")
+          PY
+
+          echo "===== VERIFY sched_boost ====="
+
+          grep -n -B5 -A10 "sched_boost" \
+            include/linux/sched.h
+
+      # ============================================================
+      # 13. FIX stack_trace
+      # ============================================================
       - name: Fix stack_trace incomplete type
         working-directory: kernel
         run: |
           set -e
 
-          echo "===== CHECK stack_trace ====="
+          echo "===== CHECK stacktrace ====="
 
-          grep -n -B5 -A8 "struct stack_trace" include/linux/netdevice.h
-          grep -n -B5 -A8 "struct stack_trace" include/linux/stacktrace.h || true
-          grep -n -B5 -A8 "struct stack_trace" include/linux/stackdepot.h || true
+          grep -n \
+            -B5 -A8 \
+            "struct stack_trace" \
+            include/linux/netdevice.h || true
 
-          echo "===== APPLY stack_trace PATCH ====="
+          echo "===== APPLY PATCH ====="
 
           python3 - <<'PY'
           from pathlib import Path
@@ -197,73 +354,114 @@ jobs:
           p = Path("include/linux/netdevice.h")
           s = p.read_text()
 
-          if '#include <linux/stacktrace.h>' in s:
-              print("stacktrace.h sudah di-include")
+          if "#include <linux/stacktrace.h>" in s:
+              print("stacktrace.h already included")
           else:
-              marker = '#include <linux/stackdepot.h>'
+              marker = "#include <linux/stackdepot.h>"
 
               if marker in s:
                   s = s.replace(
                       marker,
-                      marker + '\n#include <linux/stacktrace.h>',
+                      marker + "\n#include <linux/stacktrace.h>",
                       1
                   )
-                  print("Added linux/stacktrace.h after stackdepot.h")
+                  print("Added stacktrace.h after stackdepot.h")
+
               else:
-                  marker = '#include <linux/types.h>'
+                  marker = "#include <linux/types.h>"
 
                   if marker not in s:
                       raise SystemExit(
-                          "ERROR: tidak menemukan lokasi include yang aman"
+                          "ERROR: include location not found"
                       )
 
                   s = s.replace(
                       marker,
-                      marker + '\n#include <linux/stacktrace.h>',
+                      marker + "\n#include <linux/stacktrace.h>",
                       1
                   )
-                  print("Added linux/stacktrace.h after types.h")
+
+                  print("Added stacktrace.h after types.h")
 
               p.write_text(s)
           PY
 
           echo "===== VERIFY ====="
 
-          grep -n "stacktrace.h" include/linux/netdevice.h
+          grep -n \
+            "stacktrace.h" \
+            include/linux/netdevice.h
 
           echo "stack_trace patch OK"
 
       # ============================================================
-      # PATCH CPU TARGET
+      # 14. CHECK CONFIG BEFORE OLDDEFCONFIG
       # ============================================================
-
-      - name: Patch unsupported CPU flags
+      - name: Check configuration
         working-directory: kernel
         run: |
           set -e
 
-          echo "===== BEFORE ====="
-          grep -n "cortex-a73" Makefile || true
+          export ARCH=arm64
+          export CC="${{ github.workspace }}/clang/bin/clang"
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
+          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
 
-          sed -i \
-            's/-mcpu=cortex-a73\.cortex-a53/-mcpu=cortex-a53/g' \
-            Makefile
+          echo "===== CHECK CONFIG ====="
 
-          sed -i \
-            's/-mtune=cortex-a73\.cortex-a53/-mtune=cortex-a53/g' \
-            Makefile
+          test -f out/.config
 
-          echo "===== AFTER ====="
-          grep -n "mcpu\|mtune" Makefile | head -20
+          grep -E \
+            'CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_LITTLE_CPU_MASK=|CONFIG_BIG_CPU_MASK=' \
+            out/.config || true
 
       # ============================================================
-      # PREPARE DRVGEN
+      # 15. OLDDEFCONFIG
       # ============================================================
-
-      - name: Prepare DrvGen Python 2 wrapper
+      - name: Run olddefconfig
         working-directory: kernel
         run: |
           set -e
+
+          echo "===== OLDDEFCONFIG ====="
+
+          export ARCH=arm64
+          export CC="${{ github.workspace }}/clang/bin/clang"
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
+          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
+
+          echo "ARCH=$ARCH"
+          echo "CC=$CC"
+          echo "CLANG_TRIPLE=$CLANG_TRIPLE"
+          echo "CROSS_COMPILE=$CROSS_COMPILE"
+          echo "CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32"
+
+          test -x "$CC"
+          test -x "${CROSS_COMPILE}gcc"
+          test -x "${CROSS_COMPILE_ARM32}gcc"
+
+          make \
+            ARCH=arm64 \
+            CC="$CC" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            O=out \
+            olddefconfig
+
+          echo "===== OLDDEFCONFIG SUCCESS ====="
+
+      # ============================================================
+      # 16. DRVGEN
+      # ============================================================
+      - name: Prepare DrvGen
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "===== PREPARE DRVGEN ====="
 
           cd tools/dct
 
@@ -340,160 +538,31 @@ jobs:
 
           chmod +x DrvGen.py
 
-          echo "DrvGen wrapper ready."
+          echo "===== DRVGEN READY ====="
 
       # ============================================================
-      # VERIFY KERNELSU
+      # 17. BUILD KERNEL
       # ============================================================
-
-      - name: Verify KernelSU files
-        working-directory: kernel
-        run: |
-          set -e
-
-          echo "===== CURRENT DIRECTORY ====="
-          pwd
-
-          echo "===== KERNELSU ====="
-
-          if [ -e drivers/kernelsu ]; then
-            echo "drivers/kernelsu EXISTS"
-            ls -la drivers/kernelsu
-          else
-            echo "ERROR: drivers/kernelsu DOES NOT EXIST"
-            exit 1
-          fi
-
-          echo "===== KCONFIG ====="
-          test -f drivers/kernelsu/Kconfig
-
-          echo "===== MAKEFILE ====="
-          test -f drivers/kernelsu/Makefile
-
-          echo "===== KERNELSU VERIFY OK ====="
-
-      # ============================================================
-      # CONFIGURE KERNEL
-      # ============================================================
-
-      - name: Configure kernel
-        working-directory: kernel
-        env:
-          ARCH: arm64
-          CC: ${{ github.workspace }}/clang/bin/clang
-          CLANG_TRIPLE: aarch64-linux-gnu-
-          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
-          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
-        run: |
-          set -e
-
-          echo "===== TOOLCHAIN ====="
-          "$CC" --version
-          "${CROSS_COMPILE}gcc" --version
-
-          echo "===== CLANG TRIPLE ====="
-          echo "$CLANG_TRIPLE"
-
-          echo "===== DEFCONFIG ====="
-
-          make \
-            ARCH="$ARCH" \
-            CC="$CC" \
-            CLANG_TRIPLE="$CLANG_TRIPLE" \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            O=out \
-            oppo6771_defconfig
-
-          echo "===== DISABLE STACK PROTECTOR ====="
-
-          scripts/config --file out/.config \
-            -d CONFIG_CC_STACKPROTECTOR_STRONG \
-            -d CONFIG_CC_STACKPROTECTOR_REGULAR
-
-          echo "===== ENABLE KPROBES ====="
-
-          scripts/config --file out/.config \
-            -e CONFIG_KPROBES \
-            -e CONFIG_KSU
-
-          echo "===== CPU MASK ====="
-
-          scripts/config --file out/.config \
-            --set-val LITTLE_CPU_MASK 15 \
-            --set-val BIG_CPU_MASK 240
-
-          echo "===== OLDDEFCONFIG ====="
-
-          make \
-            ARCH="$ARCH" \
-            CC="$CC" \
-            CLANG_TRIPLE="$CLANG_TRIPLE" \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            O=out \
-            olddefconfig
-
-          echo "===== KERNELSU CONFIG ====="
-          grep -E '^CONFIG_(KSU|KPROBES)=' out/.config || true
-
-          echo "===== CPU MASK CONFIG ====="
-          grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK)' out/.config || true
-
-      # ============================================================
-      # TEST DRVGEN
-      # ============================================================
-
-      - name: Test DrvGen
-        working-directory: kernel
-        run: |
-          set -e
-
-          mkdir -p \
-            arch/arm64/boot/dts/oppo6771_18601
-
-          ./tools/dct/DrvGen.py \
-            "$(pwd)/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws" \
-            "$(pwd)/arch/arm64/boot/dts/oppo6771_18601" \
-            "$(pwd)/arch/arm64/boot/dts/oppo6771_18601" \
-            cust_dtsi
-
-          echo "DrvGen completed successfully."
-
-      - name: Reconfigure after header patches
-        working-directory: kernel
-        run: |
-          set -e
-
-          make \
-            ARCH="$ARCH" \
-            CC="$CC" \
-            CLANG_TRIPLE="$CLANG_TRIPLE" \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            O=out \
-            olddefconfig
-
-      # ============================================================
-      # BUILD KERNEL
-      # ============================================================
-
       - name: Build kernel
         working-directory: kernel
-        env:
-          ARCH: arm64
-          CC: ${{ github.workspace }}/clang/bin/clang
-          CLANG_TRIPLE: aarch64-linux-gnu-
-          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
-          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
           set -e
 
-          echo "===== BUILD ====="
+          export ARCH=arm64
+          export CC="${{ github.workspace }}/clang/bin/clang"
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
+          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
+
+          echo "===== BUILD KERNEL ====="
+
+          echo "ARCH=$ARCH"
+          echo "CC=$CC"
+          echo "CLANG_TRIPLE=$CLANG_TRIPLE"
 
           make \
             -j"$(nproc)" \
-            ARCH="$ARCH" \
+            ARCH=arm64 \
             CC="$CC" \
             CLANG_TRIPLE="$CLANG_TRIPLE" \
             CROSS_COMPILE="$CROSS_COMPILE" \
@@ -506,223 +575,13 @@ jobs:
 
           test -f out/arch/arm64/boot/Image.gz-dtb
 
-          echo "Kernel build successful."
+          echo "===== KERNEL BUILD SUCCESSFUL ====="
 
       # ============================================================
-      # DOWNLOAD ORIGINAL BOOT
+      # 18. UPLOAD KERNEL
       # ============================================================
-
-      - name: Download original boot image
-        run: |
-          set -e
-
-          mkdir -p bootwork
-
-          curl -L \
-            -o bootwork/boot-original.img \
-            "https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img"
-
-          ls -lh bootwork/boot-original.img
-
-          test "$(stat -c%s bootwork/boot-original.img)" -eq 33554432
-
-      # ============================================================
-      # BUILD MAGISKBOOT
-      # ============================================================
-
-      - name: Build MagiskBoot
-        run: |
-          set -e
-
-          git clone \
-            --depth=1 \
-            --recurse-submodules \
-            https://github.com/topjohnwu/Magisk.git \
-            magisk-source
-
-          cd magisk-source
-
-          git submodule update --init --recursive
-
-          python3 build.py ndk
-
-          python3 build.py native magiskboot
-
-          echo "===== SEARCH MAGISKBOOT ====="
-
-          find . \
-            -type f \
-            -name magiskboot \
-            -perm -111 \
-            -print
-
-          MAGISKBOOT="$(find . \
-            -type f \
-            -name magiskboot \
-            -perm -111 \
-            | head -n 1)"
-
-          if [ -z "$MAGISKBOOT" ]; then
-            echo "ERROR: magiskboot not found"
-            exit 1
-          fi
-
-          cp "$MAGISKBOOT" ../magiskboot
-
-          chmod +x ../magiskboot
-
-          file ../magiskboot
-
-          ../magiskboot --help || true
-
-      # ============================================================
-      # UNPACK ORIGINAL BOOT
-      # ============================================================
-
-      - name: Unpack original boot
-        run: |
-          set -e
-
-          rm -rf unpack
-          mkdir -p unpack
-
-          cd unpack
-
-          ../magiskboot unpack ../bootwork/boot-original.img
-
-          echo "===== UNPACKED FILES ====="
-          ls -lah
-
-          echo "===== HEADER ====="
-          cat header || true
-
-      # ============================================================
-      # REPLACE KERNEL
-      # ============================================================
-
-      - name: Replace kernel with KernelSU kernel
-        working-directory: kernel
-        run: |
-          set -e
-
-          IMG="out/arch/arm64/boot/Image.gz-dtb"
-
-          test -f "$IMG"
-
-          DTB_SIZE="$(stat -c%s ../unpack/kernel_dtb)"
-          IMG_SIZE="$(stat -c%s "$IMG")"
-
-          echo "Image.gz-dtb size: $IMG_SIZE"
-          echo "Original DTB size: $DTB_SIZE"
-
-          KERNEL_GZ_SIZE=$((IMG_SIZE - DTB_SIZE))
-
-          echo "Kernel gzip size: $KERNEL_GZ_SIZE"
-
-          dd \
-            if="$IMG" \
-            of="../new-kernel.gz" \
-            bs=1 \
-            count="$KERNEL_GZ_SIZE" \
-            status=none
-
-          gzip -t ../new-kernel.gz
-
-          echo "Kernel gzip test: OK"
-
-          gzip -dc ../new-kernel.gz > ../unpack/kernel
-
-          echo "New kernel:"
-          ls -lh ../unpack/kernel
-
-          echo "Original DTB preserved:"
-          ls -lh ../unpack/kernel_dtb
-
-      # ============================================================
-      # REPACK BOOT
-      # ============================================================
-
-      - name: Repack boot image
-        working-directory: unpack
-        run: |
-          set -e
-
-          ../magiskboot repack \
-            ../bootwork/boot-original.img \
-            ../new-boot.img
-
-          echo "===== NEW BOOT ====="
-
-          ls -lh ../new-boot.img
-
-          SIZE="$(stat -c%s ../new-boot.img)"
-
-          echo "Size: $SIZE"
-
-          if [ "$SIZE" -ne 33554432 ]; then
-            echo "WARNING: boot image size differs from original."
-          fi
-
-      # ============================================================
-      # VERIFY FINAL BOOT
-      # ============================================================
-
-      - name: Verify final boot image
-        run: |
-          set -e
-
-          rm -rf verify-boot
-          mkdir -p verify-boot
-
-          cd verify-boot
-
-          ../magiskboot unpack ../new-boot.img
-
-          echo "===== FINAL BOOT HEADER ====="
-          cat header || true
-
-          echo "===== FINAL FILES ====="
-          ls -lah
-
-          test -f kernel
-          test -f kernel_dtb
-
-          echo "Final boot verification successful."
-
-      # ============================================================
-      # SHA256
-      # ============================================================
-
-      - name: Generate SHA256
-        run: |
-          sha256sum new-boot.img | tee new-boot.img.sha256
-
-          echo "===== SHA256 ====="
-          cat new-boot.img.sha256
-
-      # ============================================================
-      # UPLOAD ARTIFACT
-      # ============================================================
-
-      - name: Upload boot image
+      - name: Upload kernel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RMX1821-KernelSU
-          path: |
-            new-boot.img
-            new-boot.img.sha256
-
-      # ============================================================
-      # RELEASE
-      # ============================================================
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: kernelsu-${{ github.run_number }}
-          name: RMX1821 KernelSU Build ${{ github.run_number }}
-          files: |
-            new-boot.img
-            new-boot.img.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: RMX1821-KernelSU-kernel
+          path: kernel/out/arch/arm64/boot/Image.gz-dtb
