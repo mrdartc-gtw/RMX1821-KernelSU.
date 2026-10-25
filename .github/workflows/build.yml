@@ -106,13 +106,17 @@ jobs:
             CLANG_TRIPLE="$CLANG_TRIPLE" \
             oppo6771_defconfig
 
-          scripts/config --file out/.config \
-            -e CONFIG_KPROBES \
-            -e CONFIG_KSU
+              scripts/config --file out/.config \
+              -e CONFIG_KPROBES \
+              -e CONFIG_KSU
 
-          scripts/config --file out/.config \
-            --set-val LITTLE_CPU_MASK 15 \
-            --set-val BIG_CPU_MASK 240
+            scripts/config --file out/.config \
+              -d CONFIG_CC_STACKPROTECTOR_STRONG \
+              -e CONFIG_CC_STACKPROTECTOR_REGULAR
+
+            scripts/config --file out/.config \
+              --set-val LITTLE_CPU_MASK 15 \
+              --set-val BIG_CPU_MASK 240
 
           echo "Configuration before olddefconfig:"
           grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
