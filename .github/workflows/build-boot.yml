@@ -672,22 +672,47 @@ jobs:
 
 
       # ============================================================
-      # 20. CLONE MAGISK
+      # 20. CLONE MAGISK + SUBMODULES
       # ============================================================
 
       - name: Clone Magisk v31.1
         run: |
           set -e
 
+          echo "========================================"
+          echo "CLONE MAGISK v31.1"
+          echo "========================================"
+
           git clone \
             --depth=1 \
             --branch v31.1 \
+            --recurse-submodules \
             https://github.com/topjohnwu/Magisk.git \
             Magisk
 
           cd Magisk
 
+          echo
+          echo "Magisk commit:"
           git log -1 --oneline
+
+          echo
+          echo "Initializing submodules..."
+
+          git submodule update \
+            --init \
+            --recursive
+
+          echo
+          echo "Checking cxx-rs..."
+
+          test -f native/src/external/cxx-rs/Cargo.toml
+
+          echo "cxx-rs found."
+
+          echo
+          echo "Submodule status:"
+          git submodule status
 
 
       # ============================================================
@@ -719,6 +744,8 @@ jobs:
           echo "========================================"
           echo "BUILD MAGISKBOOT"
           echo "========================================"
+
+          test -f native/src/external/cxx-rs/Cargo.toml
 
           python3 build.py native
 
