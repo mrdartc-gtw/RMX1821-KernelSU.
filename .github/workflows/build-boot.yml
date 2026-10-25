@@ -1,34 +1,33 @@
-name: Build RMX1821 KernelSU Full
+name: Build RMX1821 KernelSU
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-22.04
+
+    env:
+      ARCH: arm64
+      RMX_DEFCONFIG: RMX1821_defconfig
 
     steps:
 
       # ============================================================
       # 1. CHECKOUT
       # ============================================================
-      - name: Checkout repository
+
+      - name: Checkout workflow repository
         uses: actions/checkout@v4
 
 
       # ============================================================
       # 2. INSTALL DEPENDENCIES
       # ============================================================
+
       - name: Install dependencies
         run: |
           set -e
-
-          echo "========================================"
-          echo "INSTALL DEPENDENCIES"
-          echo "========================================"
 
           sudo apt-get update
 
@@ -37,48 +36,35 @@ jobs:
             bison \
             build-essential \
             ccache \
-            cmake \
             curl \
-            device-tree-compiler \
             flex \
             git \
             libelf-dev \
-            libncurses5-dev \
             libssl-dev \
-            ninja-build \
-            pkg-config \
             python3 \
+            python3-pip \
             rsync \
             unzip \
             wget \
             xz-utils \
+            zip \
             zstd \
             file \
-            binutils \
-            gzip \
-            cpio
+            xxd \
+            docker.io
 
-          echo
-          echo "===== VERSIONS ====="
-
-          git --version
-          python3 --version
-          cmake --version
-          ninja --version
           docker --version
-          file --version
+          python3 --version
+          gcc --version
 
 
       # ============================================================
       # 3. CLONE KERNEL SOURCE
       # ============================================================
+
       - name: Clone RMX1821 kernel source
         run: |
           set -e
-
-          echo "========================================"
-          echo "CLONE COSMICFRESH RMX1821"
-          echo "========================================"
 
           git clone \
             --depth=1 \
@@ -86,167 +72,55 @@ jobs:
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
 
-          echo
-          echo "===== VERIFY SOURCE ====="
-
-          test -f kernel/Makefile
-          test -d kernel/arch
-          test -d kernel/drivers
-          test -d kernel/include
-
           cd kernel
 
-          echo "Kernel commit:"
+          echo "Kernel source:"
           git log -1 --oneline
 
           echo
-          echo "Kernel source OK."
+          echo "Kernel version:"
+          grep -m1 "VERSION =" Makefile
+          grep -m1 "PATCHLEVEL =" Makefile
+          grep -m1 "SUBLEVEL =" Makefile
 
 
       # ============================================================
-      # 4. INSTALL CLANG r437112b
+      # 4. INSTALL KERNELSU v0.9.5
       # ============================================================
-      - name: Install Clang r437112b
-        run: |
-          set -e
 
-          echo "========================================"
-          echo "INSTALL CLANG r437112b"
-          echo "========================================"
-
-          mkdir -p clang
-
-          curl -L --fail --retry 5 \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/98603376816dd5a1fbb960856438124d4c618158/clang-r437112b.tar.gz" \
-            -o clang-r437112b.tar.gz
-
-          test -s clang-r437112b.tar.gz
-
-          tar -xzf \
-            clang-r437112b.tar.gz \
-            -C clang
-
-          rm -f clang-r437112b.tar.gz
-
-          test -x clang/bin/clang
-
-          chmod +x clang/bin/clang
-
-          echo
-          echo "===== CLANG VERSION ====="
-
-          ./clang/bin/clang --version
-
-
-      # ============================================================
-      # 5. GCC 4.9 AARCH64
-      # ============================================================
-      - name: Install GCC 4.9 AArch64
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "INSTALL GCC 4.9 AARCH64"
-          echo "========================================"
-
-          git clone \
-            --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
-            gcc64
-
-          test -x gcc64/bin/aarch64-linux-android-gcc
-
-          gcc64/bin/aarch64-linux-android-gcc --version
-
-
-      # ============================================================
-      # 6. GCC 4.9 ARM32
-      # ============================================================
-      - name: Install GCC 4.9 ARM32
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "INSTALL GCC 4.9 ARM32"
-          echo "========================================"
-
-          git clone \
-            --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
-            gcc32
-
-          test -x gcc32/bin/arm-linux-androideabi-gcc
-
-          gcc32/bin/arm-linux-androideabi-gcc --version
-
-
-      # ============================================================
-      # 7. CONFIGURE TOOLCHAIN
-      # ============================================================
-      - name: Configure toolchain
-        run: |
-          set -e
-
-          echo "ARCH=arm64" >> "$GITHUB_ENV"
-
-          echo "CC=${{ github.workspace }}/clang/bin/clang" >> "$GITHUB_ENV"
-
-          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> "$GITHUB_ENV"
-
-          echo "CROSS_COMPILE=${{ github.workspace }}/gcc64/bin/aarch64-linux-android-" >> "$GITHUB_ENV"
-
-          echo "CROSS_COMPILE_ARM32=${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-" >> "$GITHUB_ENV"
-
-
-      # ============================================================
-      # 8. VERIFY TOOLCHAIN
-      # ============================================================
-      - name: Verify toolchain
-        run: |
-          set -e
-
-          export CC="${{ github.workspace }}/clang/bin/clang"
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
-          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
-
-          echo "===== ARCH ====="
-
-          echo "ARCH=arm64"
-
-          echo
-          echo "===== CLANG ====="
-
-          test -x "$CC"
-          "$CC" --version
-
-          echo
-          echo "===== GCC64 ====="
-
-          test -x "${CROSS_COMPILE}gcc"
-          "${CROSS_COMPILE}gcc" --version
-
-          echo
-          echo "===== GCC32 ====="
-
-          test -x "${CROSS_COMPILE_ARM32}gcc"
-          "${CROSS_COMPILE_ARM32}gcc" --version
-
-          echo
-          echo "Toolchain OK."
-
-
-      # ============================================================
-      # 9. FIX CPU TARGET
-      # ============================================================
-      - name: Fix CPU target
+      - name: Install KernelSU v0.9.5
         working-directory: kernel
         run: |
           set -e
 
-          echo "========================================"
-          echo "FIX CPU TARGET"
-          echo "========================================"
+          curl -LSs \
+            "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" \
+            | bash -s -- v0.9.5
+
+          echo
+          echo "Checking KernelSU..."
+
+          test -e drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          test -f drivers/kernelsu/Makefile
+
+          echo "KernelSU directory:"
+          ls -la drivers/kernelsu
+
+
+      # ============================================================
+      # 5. PATCH CPU TARGET
+      # ============================================================
+
+      - name: Patch CPU target
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "Original CPU flags:"
+          grep -n \
+            -E "mcpu=|mtune=" \
+            Makefile || true
 
           sed -i \
             's/-mcpu=cortex-a73\.cortex-a53/-mcpu=cortex-a53/g' \
@@ -257,187 +131,44 @@ jobs:
             Makefile
 
           echo
-          echo "===== CPU FLAGS ====="
-
+          echo "Patched CPU flags:"
           grep -n \
-            -E 'mcpu=|mtune=' \
-            Makefile | head -30 || true
+            -E "mcpu=|mtune=" \
+            Makefile || true
 
 
       # ============================================================
-      # 10. INTEGRATE KERNELSU v0.9.5
+      # 6. PATCH STACK PROTECTOR
       # ============================================================
-      - name: Integrate KernelSU v0.9.5
+
+      - name: Disable incompatible stack protector options
         working-directory: kernel
         run: |
           set -e
 
-          echo "========================================"
-          echo "INTEGRATE KERNELSU v0.9.5"
-          echo "========================================"
+          sed -i \
+            's/^CONFIG_CC_STACKPROTECTOR_STRONG=.*/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' \
+            arch/arm64/configs/${RMX_DEFCONFIG} || true
 
-          curl -LSs \
-            "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" \
-            | bash -s -- v0.9.5
+          sed -i \
+            's/^CONFIG_CC_STACKPROTECTOR_REGULAR=.*/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/' \
+            arch/arm64/configs/${RMX_DEFCONFIG} || true
 
-          echo
-          echo "===== VERIFY KERNELSU ====="
+          cat >> arch/arm64/configs/${RMX_DEFCONFIG} <<'EOF'
 
-          test -d drivers/kernelsu
-          test -f drivers/kernelsu/Kconfig
-          test -f drivers/kernelsu/Makefile
+          # KernelSU / old GCC compatibility
+          # CONFIG_CC_STACKPROTECTOR_STRONG is not set
+          # CONFIG_CC_STACKPROTECTOR_REGULAR is not set
+          EOF
 
-          echo "KernelSU integration OK."
-
-
-      # ============================================================
-      # 11. FIND DEFCONFIG
-      # ============================================================
-      - name: Find defconfig
-        working-directory: kernel
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "AVAILABLE DEFCONFIG"
-          echo "========================================"
-
-          find arch/arm64/configs \
-            -maxdepth 1 \
-            -type f \
-            -printf '%f\n' \
-            | sort
-
-          echo
-          echo "===== RMX / OPPO / MT6771 ====="
-
-          find arch/arm64/configs \
-            -maxdepth 1 \
-            -type f \
-            \( \
-              -iname '*rmx*' -o \
-              -iname '*oppo*' -o \
-              -iname '*6771*' -o \
-              -iname '*mtk*' \
-            \) \
-            -printf '%f\n' \
-            | sort || true
+          echo "Stack protector configuration patched."
 
 
       # ============================================================
-      # 12. SELECT DEFCONFIG
+      # 7. PATCH sched_boost
       # ============================================================
-      - name: Select defconfig
-        working-directory: kernel
-        run: |
-          set -e
 
-          CONFIG=""
-
-          for candidate in \
-            rmx1821_defconfig \
-            RMX1821_defconfig \
-            oppo6771_18601_defconfig \
-            mt6771_defconfig \
-            oppo6771_defconfig
-          do
-            if [ -f "arch/arm64/configs/$candidate" ]; then
-              CONFIG="$candidate"
-              break
-            fi
-          done
-
-          if [ -z "$CONFIG" ]; then
-            echo "ERROR: RMX1821 defconfig tidak ditemukan."
-
-            echo
-            echo "===== AVAILABLE CONFIGS ====="
-
-            find arch/arm64/configs \
-              -maxdepth 1 \
-              -type f \
-              -printf '%f\n' \
-              | sort
-
-            exit 1
-          fi
-
-          echo
-          echo "Selected defconfig:"
-          echo "$CONFIG"
-
-          echo "RMX_DEFCONFIG=$CONFIG" >> "$GITHUB_ENV"
-
-
-      # ============================================================
-      # 13. CREATE BASE CONFIG
-      # ============================================================
-      - name: Create base config
-        working-directory: kernel
-        run: |
-          set -e
-
-          export CC="${{ github.workspace }}/clang/bin/clang"
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
-          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
-
-          echo "========================================"
-          echo "CREATE BASE CONFIG"
-          echo "========================================"
-
-          rm -rf out
-
-          mkdir -p out
-
-          make \
-            ARCH=arm64 \
-            CC="$CC" \
-            CLANG_TRIPLE="$CLANG_TRIPLE" \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            O=out \
-            "$RMX_DEFCONFIG"
-
-          test -f out/.config
-
-          echo
-          echo "Base config created."
-
-
-      # ============================================================
-      # 14. CONFIGURE KERNELSU
-      # ============================================================
-      - name: Configure KernelSU
-        working-directory: kernel
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "CONFIGURE KERNELSU"
-          echo "========================================"
-
-          scripts/config \
-            --file out/.config \
-            -e CONFIG_KPROBES \
-            -e CONFIG_KSU \
-            --set-val LITTLE_CPU_MASK 15 \
-            --set-val BIG_CPU_MASK 240 \
-            -d CONFIG_CC_STACKPROTECTOR_STRONG \
-            -d CONFIG_CC_STACKPROTECTOR_REGULAR
-
-          echo
-          echo "===== KERNELSU CONFIG ====="
-
-          grep -E \
-            'CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_LITTLE_CPU_MASK=|CONFIG_BIG_CPU_MASK=|CONFIG_CC_STACKPROTECTOR_' \
-            out/.config || true
-
-
-      # ============================================================
-      # 15. FIX sched_boost
-      # ============================================================
-      - name: Fix sched_boost
+      - name: Patch sched_boost declarations
         working-directory: kernel
         run: |
           set -e
@@ -462,6 +193,9 @@ jobs:
 
           if old1 in s:
               s = s.replace(old1, new1, 1)
+              print("Patched sched_boost declaration #1")
+          else:
+              print("sched_boost declaration #1 not found")
 
           old2 = """#ifdef VENDOR_EDIT
           //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
@@ -477,17 +211,23 @@ jobs:
 
           if old2 in s:
               s = s.replace(old2, new2, 1)
+              print("Patched sched_boost declaration #2")
+          else:
+              print("sched_boost declaration #2 not found")
 
           p.write_text(s)
-
-          print("sched_boost patch OK")
           PY
 
+          grep -n -A5 -B3 \
+            "extern bool sched_boost" \
+            include/linux/sched.h || true
+
 
       # ============================================================
-      # 16. FIX stack_trace
+      # 8. PATCH stack_trace
       # ============================================================
-      - name: Fix stack_trace
+
+      - name: Patch stack_trace include
         working-directory: kernel
         run: |
           set -e
@@ -498,143 +238,227 @@ jobs:
           p = Path("include/linux/netdevice.h")
           s = p.read_text()
 
-          if "#include <linux/stacktrace.h>" not in s:
+          if "#include <linux/stacktrace.h>" in s:
+              print("stacktrace.h already included")
+          else:
+              marker = "#include <linux/stackdepot.h>"
 
-              if "#include <linux/stackdepot.h>" in s:
+              if marker in s:
                   s = s.replace(
-                      "#include <linux/stackdepot.h>",
-                      "#include <linux/stackdepot.h>\n#include <linux/stacktrace.h>",
+                      marker,
+                      marker + "\n#include <linux/stacktrace.h>",
                       1
                   )
-
-              elif "#include <linux/types.h>" in s:
-                  s = s.replace(
-                      "#include <linux/types.h>",
-                      "#include <linux/types.h>\n#include <linux/stacktrace.h>",
-                      1
-                  )
-
+                  print("Added stacktrace.h after stackdepot.h")
               else:
-                  raise SystemExit(
-                      "Cannot find include location"
-                  )
+                  marker = "#include <linux/types.h>"
 
-              p.write_text(s)
+                  if marker in s:
+                      s = s.replace(
+                          marker,
+                          marker + "\n#include <linux/stacktrace.h>",
+                          1
+                      )
+                      print("Added stacktrace.h after types.h")
+                  else:
+                      raise SystemExit(
+                          "Cannot find suitable include location"
+                      )
 
-          print("stacktrace patch OK")
+          p.write_text(s)
           PY
 
           grep -n \
-            "stacktrace.h" \
+            "linux/stacktrace.h" \
             include/linux/netdevice.h
 
 
       # ============================================================
-      # 17. PREPARE DRVGEN
+      # 9. INSTALL CLANG r437112b
       # ============================================================
-      - name: Prepare DrvGen
-        working-directory: kernel
+
+      - name: Install Clang r437112b
         run: |
           set -e
 
-          echo "========================================"
-          echo "PREPARE DRVGEN"
-          echo "========================================"
+          mkdir -p clang
+
+          curl -L --fail --retry 3 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/98603376816dd5a1fbb960856438124d4c618158/clang-r437112b.tar.gz" \
+            -o clang-r437112b.tar.gz
+
+          tar -xzf \
+            clang-r437112b.tar.gz \
+            -C clang
+
+          rm -f clang-r437112b.tar.gz
+
+          test -x clang/bin/clang
+
+          chmod +x clang/bin/clang
+
+          ./clang/bin/clang --version
+
+
+      # ============================================================
+      # 10. INSTALL GCC 4.9 AARCH64
+      # ============================================================
+
+      - name: Install GCC 4.9 AArch64
+        run: |
+          set -e
+
+          git clone \
+            --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
+            gcc64
+
+          test -x gcc64/bin/aarch64-linux-android-gcc
+
+          ./gcc64/bin/aarch64-linux-android-gcc --version
+
+
+      # ============================================================
+      # 11. INSTALL GCC 4.9 ARM32
+      # ============================================================
+
+      - name: Install GCC 4.9 ARM32
+        run: |
+          set -e
+
+          git clone \
+            --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
+            gcc32
+
+          test -x gcc32/bin/arm-linux-androideabi-gcc
+
+          ./gcc32/bin/arm-linux-androideabi-gcc --version
+
+
+      # ============================================================
+      # 12. SET TOOLCHAIN ENVIRONMENT
+      # ============================================================
+
+      - name: Configure toolchains
+        run: |
+          set -e
+
+          echo "CC=${GITHUB_WORKSPACE}/clang/bin/clang" >> "$GITHUB_ENV"
+          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> "$GITHUB_ENV"
+          echo "CROSS_COMPILE=${GITHUB_WORKSPACE}/gcc64/bin/aarch64-linux-android-" >> "$GITHUB_ENV"
+          echo "CROSS_COMPILE_ARM32=${GITHUB_WORKSPACE}/gcc32/bin/arm-linux-androideabi-" >> "$GITHUB_ENV"
+
+          echo
+          echo "Toolchain configuration:"
+          echo "CC=${GITHUB_WORKSPACE}/clang/bin/clang"
+          echo "CLANG_TRIPLE=aarch64-linux-gnu-"
+          echo "CROSS_COMPILE=${GITHUB_WORKSPACE}/gcc64/bin/aarch64-linux-android-"
+          echo "CROSS_COMPILE_ARM32=${GITHUB_WORKSPACE}/gcc32/bin/arm-linux-androideabi-"
+
+
+      # ============================================================
+      # 13. INSTALL DRVGEN WRAPPER
+      # ============================================================
+
+      - name: Install DrvGen Python 2 wrapper
+        working-directory: kernel
+        run: |
+          set -e
 
           cd tools/dct
 
-          test -f DrvGen.py
+          cp DrvGen.py DrvGen.py.real
 
-          if [ ! -f DrvGen.py.real ]; then
-            cp DrvGen.py DrvGen.py.real
-          fi
+          cat > DrvGen.py <<'PY'
+          #!/usr/bin/env python3
 
-          cat > DrvGen.py <<'EOF'
-          #!/bin/sh
-          set -e
+          import os
+          import subprocess
+          import sys
 
-          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-          KERNEL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
+          script_dir = os.path.dirname(
+              os.path.realpath(__file__)
+          )
 
-          DWS="$1"
-          GEN="$2"
-          LOG="$3"
-          PARAM="$4"
+          kernel_dir = os.path.realpath(
+              os.path.join(script_dir, "../..")
+          )
 
-          if [ -z "$DWS" ] || [ -z "$GEN" ] || [ -z "$LOG" ]; then
-            echo "DrvGen wrapper: missing arguments"
-            exit 1
-          fi
+          dws = sys.argv[1]
+          gen = sys.argv[2]
+          log = sys.argv[3]
+          param = sys.argv[4]
 
-          resolve_path() {
-            TARGET="$1"
+          def resolve_path(path):
+              if os.path.isabs(path):
+                  return os.path.realpath(path)
 
-            case "$TARGET" in
-              /*)
-                printf '%s\n' "$TARGET"
-                ;;
-              *)
-                printf '%s/%s\n' "$(pwd)" "$TARGET"
-                ;;
-            esac
-          }
+              return os.path.realpath(
+                  os.path.join(os.getcwd(), path)
+              )
 
-          DWS="$(resolve_path "$DWS")"
-          GEN="$(resolve_path "$GEN")"
-          LOG="$(resolve_path "$LOG")"
+          dws = resolve_path(dws)
+          gen = resolve_path(gen)
+          log = resolve_path(log)
 
-          case "$DWS" in
-            "$KERNEL_DIR"/*)
-              DWS="/workspace/${DWS#"$KERNEL_DIR"/}"
-              ;;
-          esac
+          if dws.startswith(kernel_dir + os.sep):
+              dws = "/workspace/" + dws[
+                  len(kernel_dir) + 1:
+              ]
 
-          case "$GEN" in
-            "$KERNEL_DIR"/*)
-              GEN="/workspace/${GEN#"$KERNEL_DIR"/}"
-              ;;
-          esac
+          if gen.startswith(kernel_dir + os.sep):
+              gen = "/workspace/" + gen[
+                  len(kernel_dir) + 1:
+              ]
 
-          case "$LOG" in
-            "$KERNEL_DIR"/*)
-              LOG="/workspace/${LOG#"$KERNEL_DIR"/}"
-              ;;
-          esac
+          if log.startswith(kernel_dir + os.sep):
+              log = "/workspace/" + log[
+                  len(kernel_dir) + 1:
+              ]
 
-          echo "[DrvGen wrapper] DWS=$DWS"
-          echo "[DrvGen wrapper] GEN=$GEN"
-          echo "[DrvGen wrapper] LOG=$LOG"
+          cmd = [
+              "docker",
+              "run",
+              "--rm",
+              "-v",
+              kernel_dir + ":/workspace",
+              "-w",
+              "/workspace/tools/dct",
+              "python:2.7",
+              "python2",
+              "DrvGen.py.real",
+              dws,
+              gen,
+              log,
+              param,
+          ]
 
-          exec docker run --rm \
-            -v "$KERNEL_DIR:/workspace" \
-            -w /workspace/tools/dct \
-            python:2.7 \
-            python2 DrvGen.py.real \
-            "$DWS" \
-            "$GEN" \
-            "$LOG" \
-            "$PARAM"
-          EOF
+          print("Running DrvGen:")
+          print(" ".join(cmd))
+
+          subprocess.check_call(cmd)
+          PY
 
           chmod +x DrvGen.py
 
-          echo "DrvGen ready."
+          echo "DrvGen wrapper installed."
 
 
       # ============================================================
-      # 18. OLDDEFCONFIG
+      # 14. RUN DEFCONFIG
       # ============================================================
-      - name: Run olddefconfig
+
+      - name: Generate kernel configuration
         working-directory: kernel
+        env:
+          ARCH: arm64
+          CC: ${{ github.workspace }}/clang/bin/clang
+          CLANG_TRIPLE: aarch64-linux-gnu-
+          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
           set -e
-
-          export CC="${{ github.workspace }}/clang/bin/clang"
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
-          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
-
-          test -f out/.config
 
           make \
             ARCH=arm64 \
@@ -642,24 +466,101 @@ jobs:
             CLANG_TRIPLE="$CLANG_TRIPLE" \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            O=out \
+            "$RMX_DEFCONFIG"
+
+
+      # ============================================================
+      # 15. ENABLE KERNELSU
+      # ============================================================
+
+      - name: Enable KernelSU configuration
+        working-directory: kernel
+        env:
+          ARCH: arm64
+          CC: ${{ github.workspace }}/clang/bin/clang
+          CLANG_TRIPLE: aarch64-linux-gnu-
+          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
+        run: |
+          set -e
+
+          scripts/config \
+            --file .config \
+            --enable KPROBES
+
+          scripts/config \
+            --file .config \
+            --enable KSU
+
+          scripts/config \
+            --file .config \
+            --disable CC_STACKPROTECTOR_STRONG
+
+          scripts/config \
+            --file .config \
+            --disable CC_STACKPROTECTOR_REGULAR
+
+          make \
+            ARCH=arm64 \
+            CC="$CC" \
+            CLANG_TRIPLE="$CLANG_TRIPLE" \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             olddefconfig
 
-          echo "olddefconfig OK."
+          echo
+          echo "KernelSU configuration:"
+          grep -E \
+            '^CONFIG_(KPROBES|KSU)=' \
+            .config || true
 
 
       # ============================================================
-      # 19. BUILD KERNEL
+      # 16. VERIFY CPU MASK
       # ============================================================
-      - name: Build kernel
+
+      - name: Configure KernelSU CPU masks
         working-directory: kernel
         run: |
           set -e
 
-          export CC="${{ github.workspace }}/clang/bin/clang"
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE="${{ github.workspace }}/gcc64/bin/aarch64-linux-android-"
-          export CROSS_COMPILE_ARM32="${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-"
+          scripts/config \
+            --file .config \
+            --set-val LITTLE_CPU_MASK 15
+
+          scripts/config \
+            --file .config \
+            --set-val BIG_CPU_MASK 240
+
+          make \
+            ARCH=arm64 \
+            CC="${CC}" \
+            CLANG_TRIPLE="${CLANG_TRIPLE}" \
+            CROSS_COMPILE="${CROSS_COMPILE}" \
+            CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}" \
+            olddefconfig
+
+          echo
+          echo "KernelSU CPU masks:"
+          grep -E \
+            '^CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK)=' \
+            .config || true
+
+
+      # ============================================================
+      # 17. BUILD KERNEL
+      # ============================================================
+
+      - name: Build kernel
+        working-directory: kernel
+        env:
+          ARCH: arm64
+          CC: ${{ github.workspace }}/clang/bin/clang
+          CLANG_TRIPLE: aarch64-linux-gnu-
+          CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
+          CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
+        run: |
+          set -e
 
           echo "========================================"
           echo "BUILD KERNEL"
@@ -671,204 +572,172 @@ jobs:
             CC="$CC" \
             CLANG_TRIPLE="$CLANG_TRIPLE" \
             CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            O=out
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
 
-          echo
-          echo "===== VERIFY IMAGE ====="
-
-          test -s out/arch/arm64/boot/Image.gz-dtb
-
-          stat \
-            -c '%n = %s bytes' \
+          test -f \
             out/arch/arm64/boot/Image.gz-dtb
 
+          echo
+          echo "Kernel build successful."
+
+          ls -lh \
+            out/arch/arm64/boot/Image.gz-dtb
+
+
+      # ============================================================
+      # 18. VERIFY KERNEL BUILD
+      # ============================================================
+
+      - name: Verify kernel build
+        working-directory: kernel
+        run: |
+          set -e
+
+          test -f \
+            out/arch/arm64/boot/Image.gz-dtb
+
+          echo "Kernel image:"
           file \
             out/arch/arm64/boot/Image.gz-dtb
 
           echo
-          echo "Kernel build OK."
+          echo "Kernel size:"
+          stat \
+            -c "%s bytes" \
+            out/arch/arm64/boot/Image.gz-dtb
+
+          echo
+          echo "Kernel configuration:"
+          grep -E \
+            '^CONFIG_(KPROBES|KSU)=' \
+            .config || true
 
 
       # ============================================================
-      # 20. PREPARE BOOT WORKSPACE
+      # 19. DOWNLOAD ORIGINAL BOOT
       # ============================================================
-      - name: Prepare boot workspace
+
+      - name: Download original boot image
         run: |
           set -e
 
-          echo "========================================"
-          echo "PREPARE BOOT WORKSPACE"
-          echo "========================================"
-
-          rm -rf boot-work
-
-          mkdir -p boot-work
-
-          cp \
-            kernel/out/arch/arm64/boot/Image.gz-dtb \
-            boot-work/Image.gz-dtb
-
-          test -s boot-work/Image.gz-dtb
-
-          echo "Image.gz-dtb copied."
-
-
-      # ============================================================
-      # 21. DOWNLOAD ORIGINAL BOOT
-      # ============================================================
-      - name: Download original boot
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "DOWNLOAD ORIGINAL BOOT"
-          echo "========================================"
-
-          curl -L --fail --retry 5 \
+          curl -L --fail --retry 3 \
             "https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img" \
-            -o boot-work/boot-original.img
+            -o boot-original.img
 
-          test -s boot-work/boot-original.img
+          test -f boot-original.img
+
+          echo "Original boot:"
+          ls -lh boot-original.img
 
           echo
-          echo "===== ORIGINAL BOOT ====="
-
-          stat \
-            -c '%n = %s bytes' \
-            boot-work/boot-original.img
-
-          file \
-            boot-work/boot-original.img
+          echo "SHA256:"
+          sha256sum boot-original.img
 
 
       # ============================================================
-      # 22. BUILD MAGISKBOOT HOST x86-64
+      # 20. CLONE MAGISK
       # ============================================================
-      - name: Build host magiskboot x86-64
+
+      - name: Clone Magisk v31.1
         run: |
           set -e
-
-          echo "========================================"
-          echo "BUILD MAGISKBOOT x86-64"
-          echo "========================================"
-
-          rm -rf magisk-source
 
           git clone \
             --depth=1 \
-            --recurse-submodules \
+            --branch v31.1 \
             https://github.com/topjohnwu/Magisk.git \
-            magisk-source
+            Magisk
 
-          cd magisk-source
-
-          git submodule update --init --recursive
-
-          echo
-          echo "===== MAGISK COMMIT ====="
+          cd Magisk
 
           git log -1 --oneline
 
+
+      # ============================================================
+      # 21. BUILD MAGISKBOOT HOST
+      # ============================================================
+
+      - name: Build MagiskBoot host
+        working-directory: Magisk
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "BUILD MAGISKBOOT"
+          echo "========================================"
+
+          python3 build.py \
+            native \
+            --release
+
           echo
-          echo "===== HOST ARCH ====="
+          echo "Searching for magiskboot..."
 
-          uname -m
-
-          test "$(uname -m)" = "x86_64"
-
-          echo
-          echo "===== SETUP MAGISK NDK ====="
-
-          python3 build.py ndk
-
-          echo
-          echo "===== BUILD MAGISKBOOT ====="
-
-          python3 build.py -r native magiskboot
-
-          echo
-          echo "===== MAGISKBOOT FILES ====="
-
-          find native/out \
+          find native \
             -type f \
             -name magiskboot \
-            -exec file {} \;
+            -print
 
           echo
-          echo "===== SELECT x86_64 ====="
+          echo "Checking x86_64 binary..."
 
           HOST_MAGISKBOOT="native/out/x86_64/magiskboot"
 
-          test -f "$HOST_MAGISKBOOT"
-
-          chmod +x "$HOST_MAGISKBOOT"
+          if [ ! -f "$HOST_MAGISKBOOT" ]; then
+            echo "ERROR: x86_64 magiskboot tidak ditemukan."
+            exit 1
+          fi
 
           file "$HOST_MAGISKBOOT"
 
           if ! file "$HOST_MAGISKBOOT" | grep -q "x86-64"; then
-            echo "ERROR: x86-64 magiskboot tidak valid."
+            echo "ERROR: magiskboot bukan x86_64."
             exit 1
           fi
 
-          echo
-          echo "===== TEST EXECUTION ====="
-
-          "$HOST_MAGISKBOOT" --help >/dev/null 2>&1 || true
+          chmod +x "$HOST_MAGISKBOOT"
 
           echo
-          echo "===== COPY ====="
+          echo "Testing magiskboot execution..."
 
-          cp \
-            "$HOST_MAGISKBOOT" \
-            "${{ github.workspace }}/boot-work/magiskboot"
+          "$HOST_MAGISKBOOT" --help >/dev/null 2>&1
 
-          chmod +x \
-            "${{ github.workspace }}/boot-work/magiskboot"
-
-          file \
-            "${{ github.workspace }}/boot-work/magiskboot"
-
-          echo
-          echo "Magiskboot host OK."
+          echo "MagiskBoot x86_64 OK."
 
 
       # ============================================================
-      # 23. VERIFY MAGISKBOOT
+      # 22. COPY MAGISKBOOT
       # ============================================================
-      - name: Verify magiskboot
-        working-directory: boot-work
+
+      - name: Prepare MagiskBoot
         run: |
           set -e
 
-          echo "========================================"
-          echo "VERIFY MAGISKBOOT"
-          echo "========================================"
+          mkdir -p magiskboot
 
-          test -f magiskboot
-          test -x magiskboot
+          cp \
+            Magisk/native/out/x86_64/magiskboot \
+            magiskboot/magiskboot
 
-          file magiskboot
+          chmod +x \
+            magiskboot/magiskboot
 
-          if ! file magiskboot | grep -q "x86-64"; then
-            echo "ERROR: magiskboot bukan x86-64."
-            exit 1
-          fi
+          file \
+            magiskboot/magiskboot
 
-          echo
-          echo "===== EXECUTION TEST ====="
+          ./magiskboot/magiskboot \
+            --help >/dev/null 2>&1
 
-          ./magiskboot --help >/dev/null 2>&1 || true
-
-          echo
-          echo "magiskboot OK."
+          echo "MagiskBoot ready."
 
 
       # ============================================================
-      # 24. UNPACK ORIGINAL BOOT
+      # 23. UNPACK ORIGINAL BOOT
       # ============================================================
+
       - name: Unpack original boot
-        working-directory: boot-work
+        working-directory: magiskboot
         run: |
           set -e
 
@@ -876,652 +745,594 @@ jobs:
           echo "UNPACK ORIGINAL BOOT"
           echo "========================================"
 
-          rm -rf original
-
-          mkdir -p original
-
-          cd original
-
-          ../magiskboot unpack ../boot-original.img
+          ../Magisk/native/out/x86_64/magiskboot \
+            unpack \
+            ../boot-original.img
 
           echo
-          echo "===== UNPACKED FILES ====="
-
-          ls -lah
-
-          test -f kernel
-          test -f kernel_dtb
-          test -f ramdisk.cpio
+          echo "Unpacked files:"
+          ls -lah original
 
           echo
-          echo "Original boot unpack OK."
+          echo "Kernel:"
+          file original/kernel
+
+          echo
+          echo "Kernel DTB:"
+          file original/kernel_dtb
+
+          echo
+          echo "Ramdisk:"
+          file original/ramdisk.cpio
 
 
       # ============================================================
-      # 25. VERIFY ORIGINAL BOOT
+      # 24. SHOW ORIGINAL BOOT STRUCTURE
       # ============================================================
-      - name: Verify original boot structure
-        working-directory: boot-work
+
+      - name: Inspect original boot structure
+        working-directory: magiskboot
         run: |
           set -e
 
           echo "========================================"
-          echo "VERIFY ORIGINAL BOOT"
+          echo "ORIGINAL BOOT STRUCTURE"
           echo "========================================"
 
-          test -s original/kernel
-          test -s original/kernel_dtb
-          test -s original/ramdisk.cpio
+          echo
+          echo "Kernel:"
+          ls -lh original/kernel
 
           echo
-          echo "===== KERNEL ====="
-
-          stat \
-            -c '%n = %s bytes' \
-            original/kernel
-
-          file \
-            original/kernel
+          echo "Kernel DTB:"
+          ls -lh original/kernel_dtb
 
           echo
-          echo "===== DTB ====="
-
-          stat \
-            -c '%n = %s bytes' \
-            original/kernel_dtb
+          echo "Ramdisk:"
+          ls -lh original/ramdisk.cpio
 
           echo
-          echo "===== RAMDISK ====="
-
-          stat \
-            -c '%n = %s bytes' \
-            original/ramdisk.cpio
+          echo "Kernel header:"
+          xxd -l 64 original/kernel
 
           echo
-          echo "===== SHA256 ORIGINAL ====="
-
-          sha256sum \
-            original/kernel \
-            original/kernel_dtb \
-            original/ramdisk.cpio
+          echo "Kernel format:"
+          file original/kernel
 
           echo
-          echo "Original boot structure OK."
+          echo "DTB header:"
+          xxd -l 32 original/kernel_dtb
 
 
       # ============================================================
-      # 26. INSPECT NEW Image.gz-dtb
+      # 25. COPY NEW Image.gz-dtb
       # ============================================================
-      - name: Inspect Image.gz-dtb
-        working-directory: boot-work
+
+      - name: Copy new Image.gz-dtb
+        working-directory: magiskboot
+        run: |
+          set -e
+
+          cp \
+            ../kernel/out/arch/arm64/boot/Image.gz-dtb \
+            Image.gz-dtb
+
+          test -f Image.gz-dtb
+
+          echo "New Image.gz-dtb:"
+          file Image.gz-dtb
+
+          ls -lh Image.gz-dtb
+
+
+      # ============================================================
+      # 26. SPLIT GZIP KERNEL + DTB
+      # ============================================================
+
+      - name: Extract kernel gzip and DTB
+        working-directory: magiskboot
         run: |
           set -e
 
           echo "========================================"
-          echo "INSPECT Image.gz-dtb"
+          echo "EXTRACT KERNEL GZIP + DTB"
           echo "========================================"
-
-          test -s Image.gz-dtb
-
-          stat \
-            -c '%n = %s bytes' \
-            Image.gz-dtb
-
-          file \
-            Image.gz-dtb
-
-          echo
-          echo "===== GZIP HEADER ====="
 
           python3 - <<'PY'
           from pathlib import Path
+          import zlib
+          import struct
 
-          data = Path("Image.gz-dtb").read_bytes()
+          image = Path("Image.gz-dtb").read_bytes()
 
-          if len(data) < 2:
-              raise SystemExit("Image.gz-dtb terlalu kecil")
-
-          if data[:2] != b'\x1f\x8b':
+          if len(image) < 32:
               raise SystemExit(
-                  "ERROR: Image.gz-dtb bukan gzip"
+                  "ERROR: Image.gz-dtb terlalu kecil."
               )
 
-          print("GZIP header: OK")
-          print("Image size:", len(data))
-          PY
+          if image[:2] != b'\x1f\x8b':
+              raise SystemExit(
+                  "ERROR: Image.gz-dtb tidak diawali gzip."
+              )
 
-
-      # ============================================================
-      # 27. SPLIT KERNEL GZIP + DTB
-      # ============================================================
-      - name: Split kernel gzip and DTB
-        working-directory: boot-work
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "SPLIT KERNEL GZIP + DTB"
-          echo "========================================"
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import struct
-          import zlib
-
-          src = Path("Image.gz-dtb")
-          data = src.read_bytes()
-
-          print("Total Image.gz-dtb:", len(data))
-
-          # Decompress the gzip stream.
-          # unused_data contains everything appended after gzip,
-          # which should be the DTB.
-          obj = zlib.decompressobj(
+          d = zlib.decompressobj(
               16 + zlib.MAX_WBITS
           )
 
           try:
-              obj.decompress(data)
+              d.decompress(image)
           except zlib.error as e:
               raise SystemExit(
-                  f"ERROR: gzip decompression failed: {e}"
+                  "ERROR: gzip kernel tidak valid: " + str(e)
               )
 
-          unused = obj.unused_data
-
-          if not unused:
+          if not d.eof:
               raise SystemExit(
-                  "ERROR: Tidak ada data setelah gzip. DTB tidak ditemukan."
+                  "ERROR: gzip kernel tidak menemukan EOF."
               )
 
-          gzip_size = len(data) - len(unused)
+          kernel_gz_size = \
+              len(image) - len(d.unused_data)
 
-          kernel_gz = data[:gzip_size]
-          dtb = unused
+          kernel_gz = \
+              image[:kernel_gz_size]
 
-          print("Kernel gzip size:", len(kernel_gz))
-          print("DTB size:", len(dtb))
-          print("Gzip end offset:", gzip_size)
+          dtb = d.unused_data
 
-          # Verify DTB magic.
+          print(
+              "Image.gz-dtb size :",
+              len(image)
+          )
+
+          print(
+              "Kernel gzip size  :",
+              len(kernel_gz)
+          )
+
+          print(
+              "DTB size          :",
+              len(dtb)
+          )
+
           if len(dtb) < 8:
               raise SystemExit(
                   "ERROR: DTB terlalu kecil."
               )
 
           if dtb[:4] != b'\xd0\x0d\xfe\xed':
-              print(
-                  "DTB first bytes:",
-                  dtb[:16].hex()
-              )
               raise SystemExit(
-                  "ERROR: Data setelah gzip bukan DTB."
+                  "ERROR: data setelah gzip bukan DTB. "
+                  "Magic=" + dtb[:4].hex()
               )
 
-          # DTB totalsize is big-endian at offset 4.
           totalsize = struct.unpack(
               ">I",
               dtb[4:8]
           )[0]
 
-          print("DTB totalsize:", totalsize)
+          print(
+              "DTB magic         :",
+              dtb[:4].hex()
+          )
+
+          print(
+              "DTB totalsize     :",
+              totalsize
+          )
 
           if totalsize != len(dtb):
               raise SystemExit(
-                  "ERROR: DTB totalsize tidak sama dengan ukuran DTB."
+                  "ERROR: ukuran DTB tidak cocok. "
+                  f"header={totalsize}, "
+                  f"actual={len(dtb)}"
               )
 
-          # Verify kernel gzip.
-          if kernel_gz[:2] != b'\x1f\x8b':
-              raise SystemExit(
-                  "ERROR: kernel gzip tidak valid."
-              )
+          Path(
+              "new-kernel.gz"
+          ).write_bytes(kernel_gz)
 
-          Path("new-kernel.gz").write_bytes(
-              kernel_gz
-          )
+          Path(
+              "new-kernel-dtb"
+          ).write_bytes(dtb)
 
-          Path("new-kernel-dtb").write_bytes(
-              dtb
-          )
-
-          print()
-          print("Split berhasil.")
+          print("Extraction successful.")
           PY
-
-          echo
-          echo "===== TEST KERNEL GZIP ====="
 
           gzip -t new-kernel.gz
 
-          echo "Kernel gzip OK."
+          test -s new-kernel.gz
+          test -s new-kernel-dtb
 
           echo
-          echo "===== NEW KERNEL ====="
-
-          stat \
-            -c '%n = %s bytes' \
-            new-kernel.gz
-
-          file \
-            new-kernel.gz
+          echo "Kernel gzip:"
+          file new-kernel.gz
 
           echo
-          echo "===== NEW DTB ====="
-
-          stat \
-            -c '%n = %s bytes' \
-            new-kernel-dtb
-
-          file \
-            new-kernel-dtb
+          echo "DTB:"
+          file new-kernel-dtb
 
 
       # ============================================================
-      # 28. VERIFY KERNEL FORMAT
+      # 27. DECOMPRESS NEW KERNEL TO ARM64 IMAGE
       # ============================================================
-      - name: Verify kernel format
-        working-directory: boot-work
+
+      - name: Prepare new ARM64 kernel
+        working-directory: magiskboot
         run: |
           set -e
 
           echo "========================================"
-          echo "VERIFY KERNEL FORMAT"
+          echo "PREPARE ARM64 KERNEL"
           echo "========================================"
 
-          echo "===== ORIGINAL KERNEL ====="
+          gzip -dc \
+            new-kernel.gz \
+            > new-kernel
 
-          file original/kernel
-
-          echo
-          echo "===== NEW KERNEL ====="
-
-          file new-kernel.gz
+          test -s new-kernel
 
           echo
-          echo "===== ORIGINAL HEADER ====="
-
-          xxd -l 16 original/kernel || true
-
-          echo
-          echo "===== NEW HEADER ====="
-
-          xxd -l 16 new-kernel.gz
-
-          echo
-          echo "===== CHECK GZIP ====="
+          echo "New kernel:"
+          file new-kernel
 
           python3 - <<'PY'
           from pathlib import Path
 
-          original = Path("original/kernel").read_bytes()
-          new = Path("new-kernel.gz").read_bytes()
+          kernel = Path(
+              "new-kernel"
+          ).read_bytes()
 
-          if original[:2] != b'\x1f\x8b':
+          if len(kernel) < 0x3c:
               raise SystemExit(
-                  "ERROR: kernel asli bukan gzip."
+                  "ERROR: kernel terlalu kecil."
               )
 
-          if new[:2] != b'\x1f\x8b':
+          magic = kernel[
+              0x38:0x3c
+          ]
+
+          print(
+              "ARM64 Image magic:",
+              magic.hex()
+          )
+
+          print(
+              "Kernel size:",
+              len(kernel)
+          )
+
+          if magic != b'ARM\x64':
               raise SystemExit(
-                  "ERROR: kernel baru bukan gzip."
+                  "ERROR: hasil decompress "
+                  "bukan ARM64 Linux Image."
               )
 
-          print("Original kernel: gzip")
-          print("New kernel: gzip")
-          print("Kernel format compatible.")
+          print(
+              "ARM64 kernel valid."
+          )
           PY
 
 
       # ============================================================
-      # 29. VERIFY DTB
+      # 28. VERIFY ORIGINAL / NEW KERNEL
       # ============================================================
-      - name: Verify DTB
-        working-directory: boot-work
+
+      - name: Verify kernel formats
+        working-directory: magiskboot
         run: |
           set -e
 
           echo "========================================"
-          echo "VERIFY DTB"
+          echo "VERIFY KERNEL FORMATS"
           echo "========================================"
 
-          echo "Original DTB:"
-          stat \
-            -c '%n = %s bytes' \
-            original/kernel_dtb
+          echo
+          echo "===== ORIGINAL ====="
+          file original/kernel
 
           echo
-          echo "New build DTB:"
-          stat \
-            -c '%n = %s bytes' \
-            new-kernel-dtb
+          echo "===== NEW ====="
+          file new-kernel
 
           echo
-          echo "Original DTB akan dipertahankan."
-          echo "New build DTB TIDAK akan dimasukkan ke boot.img."
+          echo "===== ORIGINAL HEADER ====="
+          xxd -l 64 original/kernel
+
+          echo
+          echo "===== NEW HEADER ====="
+          xxd -l 64 new-kernel
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          original = Path(
+              "original/kernel"
+          ).read_bytes()
+
+          new = Path(
+              "new-kernel"
+          ).read_bytes()
+
+          if len(original) < 0x3c:
+              raise SystemExit(
+                  "ERROR: original kernel terlalu kecil."
+              )
+
+          if len(new) < 0x3c:
+              raise SystemExit(
+                  "ERROR: new kernel terlalu kecil."
+              )
+
+          original_magic = \
+              original[0x38:0x3c]
+
+          new_magic = \
+              new[0x38:0x3c]
+
+          print(
+              "Original magic:",
+              original_magic.hex()
+          )
+
+          print(
+              "New magic:",
+              new_magic.hex()
+          )
+
+          if original_magic != b'ARM\x64':
+              raise SystemExit(
+                  "ERROR: original bukan ARM64 Image."
+              )
+
+          if new_magic != b'ARM\x64':
+              raise SystemExit(
+                  "ERROR: new bukan ARM64 Image."
+              )
+
+          print(
+              "Original kernel: ARM64 Image"
+          )
+
+          print(
+              "New kernel: ARM64 Image"
+          )
+
+          print(
+              "Kernel format compatible."
+          )
+          PY
 
 
       # ============================================================
-      # 30. BACKUP + REPLACE ONLY KERNEL
+      # 29. BACKUP ORIGINAL COMPONENTS
       # ============================================================
-      - name: Replace only kernel
-        working-directory: boot-work
+
+      - name: Backup original boot components
+        working-directory: magiskboot
         run: |
           set -e
-
-          echo "========================================"
-          echo "REPLACE ONLY KERNEL"
-          echo "========================================"
 
           cp \
             original/kernel \
             original/kernel.original
 
           cp \
-            new-kernel.gz \
+            original/kernel_dtb \
+            original/kernel_dtb.original
+
+          cp \
+            original/ramdisk.cpio \
+            original/ramdisk.cpio.original
+
+          echo "Original components backed up."
+
+
+      # ============================================================
+      # 30. REPLACE ONLY KERNEL
+      # ============================================================
+
+      - name: Replace kernel
+        working-directory: magiskboot
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "REPLACE KERNEL"
+          echo "========================================"
+
+          cp \
+            new-kernel \
             original/kernel
 
-          test -s original/kernel
-          test -s original/kernel_dtb
-          test -s original/ramdisk.cpio
+          echo
+          echo "New kernel:"
+          file original/kernel
 
           echo
-          echo "===== SHA256 AFTER REPLACEMENT ====="
-
-          sha256sum \
-            original/kernel \
-            original/kernel.original \
+          echo "Original DTB preserved:"
+          cmp \
             original/kernel_dtb \
-            original/ramdisk.cpio
+            original/kernel_dtb.original
+
+          echo "DTB unchanged."
 
           echo
-          echo "Only kernel was replaced."
-          echo "DTB preserved."
-          echo "Ramdisk preserved."
+          echo "Original ramdisk preserved:"
+          cmp \
+            original/ramdisk.cpio \
+            original/ramdisk.cpio.original
+
+          echo "Ramdisk unchanged."
 
 
       # ============================================================
       # 31. REPACK BOOT
       # ============================================================
-      - name: Repack boot
-        working-directory: boot-work/original
+
+      - name: Repack KernelSU boot image
+        working-directory: magiskboot
         run: |
           set -e
 
           echo "========================================"
-          echo "REPACK BOOT"
+          echo "REPACK BOOT IMAGE"
           echo "========================================"
 
-          rm -f ../boot-kernelsu.img
-
-          ../magiskboot repack \
+          ../Magisk/native/out/x86_64/magiskboot \
+            repack \
             ../boot-original.img \
             ../boot-kernelsu.img
 
-          test -s ../boot-kernelsu.img
+          test -f ../boot-kernelsu.img
 
           echo
-          echo "===== RESULT ====="
-
-          stat \
-            -c '%n = %s bytes' \
-            ../boot-kernelsu.img
-
-          file \
-            ../boot-kernelsu.img
+          echo "Boot image created:"
+          ls -lh ../boot-kernelsu.img
 
           echo
-          echo "Repack successful."
+          echo "SHA256:"
+          sha256sum ../boot-kernelsu.img
 
 
       # ============================================================
       # 32. UNPACK FINAL BOOT FOR VERIFICATION
       # ============================================================
-      - name: Verify final boot by unpacking
-        working-directory: boot-work
-        run: |
-          set -e
 
-          echo "========================================"
-          echo "VERIFY FINAL BOOT"
-          echo "========================================"
-
-          rm -rf verify
-
-          mkdir -p verify
-
-          cd verify
-
-          ../magiskboot unpack \
-            ../boot-kernelsu.img
-
-          echo
-          echo "===== FINAL UNPACK ====="
-
-          ls -lah
-
-          test -s kernel
-          test -s kernel_dtb
-          test -s ramdisk.cpio
-
-          echo
-          echo "Final boot can be unpacked."
-
-
-      # ============================================================
-      # 33. VERIFY DTB UNCHANGED
-      # ============================================================
-      - name: Verify DTB unchanged
-        working-directory: boot-work
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "VERIFY DTB UNCHANGED"
-          echo "========================================"
-
-          echo "===== SHA256 ====="
-
-          sha256sum \
-            original/kernel_dtb \
-            verify/kernel_dtb
-
-          echo
-          echo "===== BINARY COMPARE ====="
-
-          cmp \
-            original/kernel_dtb \
-            verify/kernel_dtb
-
-          echo
-          echo "DTB unchanged: OK."
-
-
-      # ============================================================
-      # 34. VERIFY RAMDISK UNCHANGED
-      # ============================================================
-      - name: Verify ramdisk unchanged
-        working-directory: boot-work
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "VERIFY RAMDISK UNCHANGED"
-          echo "========================================"
-
-          echo "===== SHA256 ====="
-
-          sha256sum \
-            original/ramdisk.cpio \
-            verify/ramdisk.cpio
-
-          echo
-          echo "===== BINARY COMPARE ====="
-
-          cmp \
-            original/ramdisk.cpio \
-            verify/ramdisk.cpio
-
-          echo
-          echo "Ramdisk unchanged: OK."
-
-
-      # ============================================================
-      # 35. VERIFY KERNEL
-      # ============================================================
-      - name: Verify kernel replacement
-        working-directory: boot-work
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "VERIFY KERNEL REPLACEMENT"
-          echo "========================================"
-
-          echo "===== SHA256 ====="
-
-          sha256sum \
-            original/kernel.original \
-            original/kernel \
-            verify/kernel
-
-          echo
-          echo "===== FINAL KERNEL COMPARE ====="
-
-          cmp \
-            original/kernel \
-            verify/kernel
-
-          echo
-          echo "Final kernel matches replaced kernel."
-
-          echo
-          echo "===== ENSURE KERNEL ACTUALLY CHANGED ====="
-
-          if cmp -s \
-            original/kernel.original \
-            original/kernel
-          then
-            echo "ERROR: Kernel tidak berubah."
-            exit 1
-          fi
-
-          echo
-          echo "Kernel successfully replaced."
-
-
-      # ============================================================
-      # 36. VERIFY BOOT SIZE + HASH
-      # ============================================================
       - name: Verify final boot image
-        working-directory: boot-work
+        run: |
+          set -e
+
+          mkdir -p final-check
+
+          cp \
+            boot-kernelsu.img \
+            final-check/boot-kernelsu.img
+
+          cd final-check
+
+          ../Magisk/native/out/x86_64/magiskboot \
+            unpack \
+            boot-kernelsu.img
+
+          echo
+          echo "Final boot components:"
+          ls -lah original
+
+
+      # ============================================================
+      # 33. VERIFY DTB
+      # ============================================================
+
+      - name: Verify DTB unchanged
+        working-directory: final-check
+        run: |
+          set -e
+
+          cmp \
+            original/kernel_dtb \
+            ../magiskboot/original/kernel_dtb.original
+
+          echo "DTB verification: PASS"
+
+
+      # ============================================================
+      # 34. VERIFY RAMDISK
+      # ============================================================
+
+      - name: Verify ramdisk unchanged
+        working-directory: final-check
+        run: |
+          set -e
+
+          cmp \
+            original/ramdisk.cpio \
+            ../magiskboot/original/ramdisk.cpio.original
+
+          echo "Ramdisk verification: PASS"
+
+
+      # ============================================================
+      # 35. VERIFY FINAL KERNEL
+      # ============================================================
+
+      - name: Verify final kernel
+        working-directory: final-check
+        run: |
+          set -e
+
+          echo "Final kernel:"
+          file original/kernel
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          kernel = Path(
+              "original/kernel"
+          ).read_bytes()
+
+          if len(kernel) < 0x3c:
+              raise SystemExit(
+                  "ERROR: final kernel terlalu kecil."
+              )
+
+          magic = kernel[
+              0x38:0x3c
+          ]
+
+          print(
+              "Final kernel magic:",
+              magic.hex()
+          )
+
+          if magic != b'ARM\x64':
+              raise SystemExit(
+                  "ERROR: final kernel bukan ARM64 Image."
+              )
+
+          print(
+              "Final kernel verification: PASS"
+          )
+          PY
+
+
+      # ============================================================
+      # 36. FINAL SHA256
+      # ============================================================
+
+      - name: Final boot image information
         run: |
           set -e
 
           echo "========================================"
-          echo "FINAL RMX1821 KERNELSU BOOT"
+          echo "FINAL RESULT"
           echo "========================================"
 
-          test -s boot-original.img
-          test -s boot-kernelsu.img
-          test -s Image.gz-dtb
+          echo
+          echo "File:"
+          ls -lh boot-kernelsu.img
 
           echo
-          echo "===== FILE SIZES ====="
-
-          stat \
-            -c '%n = %s bytes' \
-            boot-original.img \
-            boot-kernelsu.img \
-            Image.gz-dtb
+          echo "SHA256:"
+          sha256sum boot-kernelsu.img
 
           echo
-          echo "===== SHA256 ====="
-
-          sha256sum \
-            boot-original.img \
-            boot-kernelsu.img \
-            Image.gz-dtb
-
-          sha256sum \
-            boot-kernelsu.img \
-            > boot-kernelsu.img.sha256
+          echo "Original boot SHA256:"
+          sha256sum boot-original.img
 
           echo
-          echo "===== FINAL CHECKS ====="
-
-          test -s boot-kernelsu.img
-          test -s boot-kernelsu.img.sha256
-
-          echo
-          echo "FINAL BOOT IMAGE READY."
+          echo "Final boot image:"
+          file boot-kernelsu.img
 
 
       # ============================================================
-      # 37. CREATE BUILD INFO
+      # 37. UPLOAD ARTIFACT
       # ============================================================
-      - name: Create build information
-        working-directory: boot-work
-        run: |
-          set -e
 
-          cat > BUILD_INFO.txt <<EOF
-          RMX1821 KernelSU Build
-          =====================
-
-          Device:
-          Realme 3 RMX1821
-
-          Kernel source:
-          Dark-Matter7232/CosmicFresh-RMX1821
-
-          Kernel branch:
-          Q
-
-          KernelSU:
-          v0.9.5
-
-          Clang:
-          r437112b
-
-          Architecture:
-          ARM64
-
-          Original boot:
-          boot-original.img
-
-          Output boot:
-          boot-kernelsu.img
-
-          DTB:
-          Original DTB preserved
-
-          Ramdisk:
-          Original ramdisk preserved
-
-          Kernel:
-          Replaced with newly built KernelSU kernel
-
-          Verification:
-          Final boot unpack successful
-          DTB unchanged
-          Ramdisk unchanged
-          Kernel replacement verified
-          EOF
-
-          cat BUILD_INFO.txt
-
-
-      # ============================================================
-      # 38. UPLOAD ARTIFACT
-      # ============================================================
-      - name: Upload final KernelSU boot
+      - name: Upload KernelSU boot image
         uses: actions/upload-artifact@v4
         with:
-          name: RMX1821-KernelSU-Boot
+          name: RMX1821-KernelSU-boot
           path: |
-            boot-work/boot-kernelsu.img
-            boot-work/boot-kernelsu.img.sha256
-            boot-work/Image.gz-dtb
-            boot-work/BUILD_INFO.txt
+            boot-kernelsu.img
+            boot-original.img
           if-no-files-found: error
