@@ -1,0 +1,14 @@
+name: Test RMX1821
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Test
+        run: |
+          echo "Workflow detected"
+          echo "RMX1821 KernelSU"
