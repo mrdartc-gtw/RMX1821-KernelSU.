@@ -886,7 +886,7 @@ jobs:
       # 24. SHOW ORIGINAL BOOT STRUCTURE
       # ============================================================
 
-      - name: Inspect original boot structure
+      - name: Check original boot structure
         working-directory: magiskboot
         run: |
           set -e
@@ -896,29 +896,45 @@ jobs:
           echo "========================================"
 
           echo
+          echo "Current directory:"
+          pwd
+
+          echo
+          echo "Files:"
+          ls -lah
+
+          echo
           echo "Kernel:"
-          ls -lh original/kernel
+          ls -lh kernel
 
           echo
           echo "Kernel DTB:"
-          ls -lh original/kernel_dtb
+          ls -lh kernel_dtb
 
           echo
           echo "Ramdisk:"
-          ls -lh original/ramdisk.cpio
+          ls -lh ramdisk.cpio
 
           echo
           echo "Kernel header:"
-          xxd -l 64 original/kernel
+          xxd -l 64 kernel
 
           echo
           echo "Kernel format:"
-          file original/kernel
+          file kernel
 
           echo
           echo "DTB header:"
-          xxd -l 32 original/kernel_dtb
+          xxd -l 32 kernel_dtb
 
+          echo
+          echo "Ramdisk format:"
+          file ramdisk.cpio
+
+          echo
+          echo "========================================"
+          echo "ORIGINAL BOOT STRUCTURE: PASS"
+          echo "========================================"
 
       # ============================================================
       # 25. COPY NEW Image.gz-dtb
