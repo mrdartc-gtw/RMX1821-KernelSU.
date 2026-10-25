@@ -99,7 +99,7 @@ jobs:
           test -f drivers/kernelsu/Kconfig
           test -f drivers/kernelsu/Makefile
 
-      - name: Prepare DrvGen Python 3 wrapper
+      - name: Prepare DrvGen Python 2 wrapper
         working-directory: kernel
         run: |
           if [ -f tools/dct/DrvGen.py ] && [ ! -f tools/dct/DrvGen.py.real ]; then
@@ -108,14 +108,18 @@ jobs:
 
           printf '%s\n' \
             '#!/bin/sh' \
-            'exec python3 "$(dirname "$0")/DrvGen.py.real" "$@"' \
+            'SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"' \
+            'KERNEL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"' \
+            'exec docker run --rm -v "$KERNEL_DIR:/workspace" -w /workspace python:2.7 python tools/dct/DrvGen.py.real "$@"' \
             > tools/dct/DrvGen.py
 
           chmod +x tools/dct/DrvGen.py
 
-          test -f tools/dct/DrvGen.py.real
+          echo "DrvGen wrapper:"
+          cat tools/dct/DrvGen.py
 
-          python3 tools/dct/DrvGen.py || true
+          echo "DrvGen source:"
+          head -n 10 tools/dct/DrvGen.py.real
 
       - name: Configure kernel
         working-directory: kernel
