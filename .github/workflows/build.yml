@@ -178,6 +178,45 @@ jobs:
 
           echo "KernelSU integration: OK"
 
+      - name: Fix sched_boost declaration
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "===== CHECK sched_boost ====="
+
+          echo "--- include/linux/sched.h ---"
+          grep -n -B5 -A10 "sched_boost" include/linux/sched.h || true
+
+          echo "--- include/linux/sched/sched.h ---"
+          grep -n -B5 -A10 "sched_boost" include/linux/sched/sched.h || true
+
+          echo "===== APPLY PATCH ====="
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("include/linux/sched.h")
+          s = p.read_text()
+
+          old = "extern bool sched_boost(void);"
+          new = "static inline bool sched_boost(void);"
+
+          count = s.count(old)
+
+          if count != 1:
+              raise SystemExit(
+                  "ERROR: expected exactly 1 sched_boost extern declaration, "
+                  f"found {count}"
+              )
+
+          p.write_text(s.replace(old, new, 1))
+
+          print("OK: sched_boost declaration patched")
+          PY
+
+          echo "===== VERIFY PATCH ====="
+          grep -n -B5 -A10 "sched_boost" include/linux/sched.h
       # ============================================================
       # PATCH CPU TARGET
       # ============================================================
