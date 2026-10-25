@@ -77,22 +77,11 @@ jobs:
 
           echo "Toolchain layout OK."
 
-      - name: Integrate KernelSU v0.9.5
+- name: Prepare DrvGen Python 2 wrapper
         working-directory: kernel
         run: |
-          curl -LSs \
-            "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" \
-            | bash -s -- v0.9.5
+          set -e
 
-          test -L drivers/kernelsu
-          test -f drivers/kernelsu/Kconfig
-          test -f drivers/kernelsu/Makefile
-
-          echo "KernelSU v0.9.5 integrated."
-
-      - name: Prepare DrvGen Python 2 wrapper
-        working-directory: kernel
-        run: |
           if [ -f tools/dct/DrvGen.py ] && [ ! -f tools/dct/DrvGen.py.real ]; then
             mv tools/dct/DrvGen.py tools/dct/DrvGen.py.real
           fi
@@ -103,57 +92,107 @@ jobs:
           SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
           KERNEL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 
+          DWS="$1"
+          GEN="$2"
+          LOG="$3"
+          PARAM="$4"
+
+          case "$DWS" in
+            /*)
+              ;;
+            *)
+              DWS="$(CDPATH= cd -- "$(dirname "$DWS")" && pwd)/$(basename "$DWS")"
+              ;;
+          esac
+
+          case "$GEN" in
+            /*)
+              ;;
+            *)
+              GEN="$(CDPATH= cd -- "$(dirname "$GEN")" && pwd)/$(basename "$GEN")"
+              ;;
+          esac
+
+          case "$LOG" in
+            /*)
+              ;;
+            *)
+              LOG="$(CDPATH= cd -- "$(dirname "$LOG")" && pwd)/$(basename "$LOG")"
+              ;;
+          esac
+
+          case "$DWS" in
+            "$KERNEL_DIR"/*)
+              DWS="/workspace/${DWS#"$KERNEL_DIR"/}"
+              ;;
+          esac
+
+          case "$GEN" in
+            "$KERNEL_DIR"/*)
+              GEN="/workspace/${GEN#"$KERNEL_DIR"/}"
+              ;;
+          esac
+
+          case "$LOG" in
+            "$KERNEL_DIR"/*)
+              LOG="/workspace/${LOG#"$KERNEL_DIR"/}"
+              ;;
+          esac
+
           exec docker run --rm \
             -v "$KERNEL_DIR:/workspace" \
             -w /workspace/tools/dct \
             python:2.7 \
-            python2 DrvGen.py.real "$@"
+            python2 DrvGen.py.real \
+            "$DWS" \
+            "$GEN" \
+            "$LOG" \
+            "$PARAM"
           EOF
 
           chmod +x tools/dct/DrvGen.py
 
-          test -f tools/dct/DrvGen.py.real
-          test -x tools/dct/DrvGen.py
+          echo "===== DRVGEN WRAPPER ====="
+          cat tools/dct/DrvGen.py
 
           echo "DrvGen wrapper prepared."
 
-      - name: Configure kernel
+- name: Configure kernel
         working-directory: kernel
         env:
           ARCH: arm64
+          CC: ${{ github.workspace }}/clang/bin/clang
           CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
-          echo "===== GCC ====="
-          "$CROSS_COMPILE"gcc --version | head -n 3
+          set -e
 
-          echo "===== TEST GCC A53 ====="
+          echo "===== CLANG ====="
+          "$CC" --version | head -n 3
 
-          "$CROSS_COMPILE"gcc \
-            -mcpu=cortex-a53 \
+          echo "===== TEST CLANG CPU TARGET ====="
+
+          "$CC" \
+            --target=aarch64-linux-android \
+            -mcpu=cortex-a73.cortex-a53 \
             -E -x c /dev/null \
             -o /dev/null
 
-          echo "GCC cortex-a53: OK"
+          echo "Clang CPU target: OK"
 
-          echo "===== FIX CPU FLAGS ====="
+          echo "===== VERIFY KERNELSU ====="
 
-          sed -i \
-            's/-mcpu=cortex-a73\.cortex-a53 -mtune=cortex-a73\.cortex-a53/-mcpu=cortex-a53 -mtune=cortex-a53/g' \
-            Makefile
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          test -f drivers/kernelsu/Makefile
 
-          echo "CPU flags:"
-          grep -n -E 'mcpu=|mtune=' Makefile | head -20
-
-          if grep -q 'cortex-a73\.cortex-a53' Makefile; then
-            echo "ERROR: unsupported cortex-a73.cortex-a53 remains."
-            exit 1
-          fi
+          echo "KernelSU files: OK"
 
           echo "===== DEFCONFIG ====="
 
           make O=out \
             ARCH=arm64 \
+            CC="$CC" \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             oppo6771_defconfig
@@ -182,6 +221,7 @@ jobs:
 
           make O=out \
             ARCH=arm64 \
+            CC="$CC" \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             olddefconfig
@@ -192,26 +232,26 @@ jobs:
             'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' \
             out/.config || true
 
+          echo "===== REQUIRED KSU CONFIG ====="
+
           grep -E '^CONFIG_(KSU|KPROBES)=' out/.config
 
-          echo "Kernel configuration completed."
+          echo "Kernel configuration completed successfully."
 
       - name: Test DrvGen
         working-directory: kernel
         run: |
+          set -e
+
           echo "===== TEST DRVGEN ====="
 
           mkdir -p arch/arm64/boot/dts/oppo6771_18601
 
-          cd tools/dct
-
-          ./DrvGen.py \
-            ../../drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws \
-            ../../arch/arm64/boot/dts/oppo6771_18601 \
-            ../../arch/arm64/boot/dts/oppo6771_18601 \
+          ./tools/dct/DrvGen.py \
+            "$(pwd)/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws" \
+            "$(pwd)/arch/arm64/boot/dts/oppo6771_18601" \
+            "$(pwd)/arch/arm64/boot/dts/oppo6771_18601" \
             cust_dtsi
-
-          cd ../..
 
           echo "DrvGen completed successfully."
 
@@ -219,6 +259,7 @@ jobs:
         working-directory: kernel
         env:
           ARCH: arm64
+          CC: ${{ github.workspace }}/clang/bin/clang
           CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
@@ -226,9 +267,12 @@ jobs:
 
           echo "===== BUILD KERNEL ====="
 
+          "$CC" --version | head -n 3
+
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
+            CC="$CC" \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             Image.gz-dtb
