@@ -182,13 +182,27 @@ jobs:
 
           "$CC" \
             --target=aarch64-linux-android \
-            -mcpu=cortex-a73.cortex-a53 \
+            -mcpu=cortex-a53 \
             -E \
             -x c \
             /dev/null \
             -o /dev/null
 
           echo "Clang CPU target: OK"
+
+          echo "===== PATCH CPU FLAGS FOR CLANG ====="
+
+          sed -i \
+            's/-mcpu=cortex-a73\.cortex-a53/-mcpu=cortex-a53/g' \
+            Makefile
+
+          sed -i \
+            's/-mtune=cortex-a73\.cortex-a53/-mtune=cortex-a53/g' \
+            Makefile
+
+          echo "===== VERIFY CPU FLAGS ====="
+
+          grep -nE 'mcpu=|mtune=' Makefile | head -n 20
 
           echo "===== VERIFY KERNELSU ====="
 
@@ -278,6 +292,12 @@ jobs:
           echo "===== BUILD KERNEL ====="
 
           "$CC" --version | head -n 3
+
+          echo "===== VERIFY CPU FLAGS ====="
+
+          grep -nE 'mcpu=|mtune=' Makefile | head -n 20
+
+          echo "===== BUILD ====="
 
           make -j"$(nproc)" \
             O=out \
