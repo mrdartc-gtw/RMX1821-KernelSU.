@@ -50,8 +50,12 @@ jobs:
             zip \
             zstd \
             file \
-            xxd \
-            docker.io
+            xxd
+
+          echo
+          echo "========================================"
+          echo "CHECK TOOLS"
+          echo "========================================"
 
           docker --version
           python3 --version
