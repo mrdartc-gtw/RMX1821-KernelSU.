@@ -561,6 +561,10 @@ jobs:
       # 17. BUILD KERNEL
       # ============================================================
 
+      # ============================================================
+      # 17. BUILD KERNEL
+      # ============================================================
+
       - name: Build kernel
         working-directory: kernel
         env:
@@ -576,13 +580,25 @@ jobs:
           echo "BUILD KERNEL"
           echo "========================================"
 
+          echo
+          echo "Checking configuration:"
+          test -f out/.config
+          grep -E '^CONFIG_(KPROBES|KSU)=' out/.config
+
+          echo
+          echo "Starting kernel build..."
+
           make \
+            O=out \
             -j"$(nproc)" \
             ARCH=arm64 \
             CC="$CC" \
             CLANG_TRIPLE="$CLANG_TRIPLE" \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
+
+          echo
+          echo "Checking kernel image..."
 
           test -f \
             out/arch/arm64/boot/Image.gz-dtb
@@ -593,7 +609,6 @@ jobs:
           ls -lh \
             out/arch/arm64/boot/Image.gz-dtb
 
-
       # ============================================================
       # 18. VERIFY KERNEL BUILD
       # ============================================================
@@ -603,9 +618,17 @@ jobs:
         run: |
           set -e
 
+          echo "========================================"
+          echo "VERIFY KERNEL BUILD"
+          echo "========================================"
+
           test -f \
             out/arch/arm64/boot/Image.gz-dtb
 
+          test -f \
+            out/.config
+
+          echo
           echo "Kernel image:"
           file \
             out/arch/arm64/boot/Image.gz-dtb
@@ -620,7 +643,10 @@ jobs:
           echo "Kernel configuration:"
           grep -E \
             '^CONFIG_(KPROBES|KSU)=' \
-            .config || true
+            out/.config
+
+          echo
+          echo "Kernel image verification: PASS"
 
 
       # ============================================================
@@ -668,53 +694,52 @@ jobs:
       # 21. BUILD MAGISKBOOT HOST
       # ============================================================
 
-- name: Build MagiskBoot
-  working-directory: Magisk
-  run: |
-    set -e
+      - name: Build MagiskBoot
+        working-directory: Magisk
+        run: |
+          set -e
 
-    echo "========================================"
-    echo "BUILD MAGISKBOOT"
-    echo "========================================"
+          echo "========================================"
+          echo "BUILD MAGISKBOOT"
+          echo "========================================"
 
-    python3 build.py native
+          python3 build.py native
 
-    echo
-    echo "Searching for magiskboot..."
+          echo
+          echo "Searching for magiskboot..."
 
-    find native \
-      -type f \
-      -name magiskboot \
-      -print
+          find native \
+            -type f \
+            -name magiskboot \
+            -print
 
-    echo
-    echo "Checking x86_64 binary..."
+          echo
+          echo "Checking x86_64 binary..."
 
-    HOST_MAGISKBOOT="native/out/x86_64/magiskboot"
+          HOST_MAGISKBOOT="native/out/x86_64/magiskboot"
 
-    if [ ! -f "$HOST_MAGISKBOOT" ]; then
-      echo "ERROR: x86_64 magiskboot tidak ditemukan."
-      exit 1
-    fi
+          if [ ! -f "$HOST_MAGISKBOOT" ]; then
+            echo "ERROR: x86_64 magiskboot tidak ditemukan."
+            exit 1
+          fi
 
-    echo
-    echo "File information:"
-    file "$HOST_MAGISKBOOT"
+          echo
+          echo "File information:"
+          file "$HOST_MAGISKBOOT"
 
-    if ! file "$HOST_MAGISKBOOT" | grep -q "x86-64"; then
-      echo "ERROR: magiskboot bukan x86_64."
-      exit 1
-    fi
+          if ! file "$HOST_MAGISKBOOT" | grep -q "x86-64"; then
+            echo "ERROR: magiskboot bukan x86_64."
+            exit 1
+          fi
 
-    chmod +x "$HOST_MAGISKBOOT"
+          chmod +x "$HOST_MAGISKBOOT"
 
-    echo
-    echo "Testing magiskboot execution..."
+          echo
+          echo "Testing magiskboot execution..."
 
-    "$HOST_MAGISKBOOT" --help >/dev/null 2>&1
+          "$HOST_MAGISKBOOT" --help >/dev/null 2>&1
 
-    echo "MagiskBoot x86_64 OK."
-
+          echo "MagiskBoot x86_64 OK."
       # ============================================================
       # 22. COPY MAGISKBOOT
       # ============================================================
