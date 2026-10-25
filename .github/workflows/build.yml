@@ -62,22 +62,26 @@ jobs:
           test -x gcc64/bin/aarch64-linux-android-gcc
           test -x gcc32/bin/arm-linux-androideabi-gcc
 
-          echo "GCC 64-bit:"
+          echo "===== CLANG ====="
+          clang/bin/clang --version | head -n 3
+
+          echo "===== GCC 64-bit ====="
           gcc64/bin/aarch64-linux-android-gcc --version | head -n 1
 
-          echo "GCC 32-bit:"
+          echo "===== GCC 32-bit ====="
           gcc32/bin/arm-linux-androideabi-gcc --version | head -n 1
 
       - name: Verify toolchain layout
         run: |
           echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
 
+          test -x "$GITHUB_WORKSPACE/clang/bin/clang"
           test -x "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc"
           test -x "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
 
           echo "Toolchain layout OK."
 
-- name: Prepare DrvGen Python 2 wrapper
+      - name: Prepare DrvGen Python 2 wrapper
         working-directory: kernel
         run: |
           set -e
@@ -89,6 +93,8 @@ jobs:
           cat > tools/dct/DrvGen.py <<'EOF'
           #!/bin/sh
 
+          set -e
+
           SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
           KERNEL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 
@@ -97,29 +103,27 @@ jobs:
           LOG="$3"
           PARAM="$4"
 
-          case "$DWS" in
-            /*)
-              ;;
-            *)
-              DWS="$(CDPATH= cd -- "$(dirname "$DWS")" && pwd)/$(basename "$DWS")"
-              ;;
-          esac
+          if [ -z "$DWS" ] || [ -z "$GEN" ] || [ -z "$LOG" ]; then
+            echo "DrvGen wrapper: missing arguments"
+            exit 1
+          fi
 
-          case "$GEN" in
-            /*)
-              ;;
-            *)
-              GEN="$(CDPATH= cd -- "$(dirname "$GEN")" && pwd)/$(basename "$GEN")"
-              ;;
-          esac
+          resolve_path() {
+            TARGET="$1"
 
-          case "$LOG" in
-            /*)
-              ;;
-            *)
-              LOG="$(CDPATH= cd -- "$(dirname "$LOG")" && pwd)/$(basename "$LOG")"
-              ;;
-          esac
+            case "$TARGET" in
+              /*)
+                printf '%s\n' "$TARGET"
+                ;;
+              *)
+                printf '%s/%s\n' "$(pwd)" "$TARGET"
+                ;;
+            esac
+          }
+
+          DWS="$(resolve_path "$DWS")"
+          GEN="$(resolve_path "$GEN")"
+          LOG="$(resolve_path "$LOG")"
 
           case "$DWS" in
             "$KERNEL_DIR"/*)
@@ -139,6 +143,10 @@ jobs:
               ;;
           esac
 
+          echo "[DrvGen wrapper] DWS=$DWS"
+          echo "[DrvGen wrapper] GEN=$GEN"
+          echo "[DrvGen wrapper] LOG=$LOG"
+
           exec docker run --rm \
             -v "$KERNEL_DIR:/workspace" \
             -w /workspace/tools/dct \
@@ -157,7 +165,7 @@ jobs:
 
           echo "DrvGen wrapper prepared."
 
-- name: Configure kernel
+      - name: Configure kernel
         working-directory: kernel
         env:
           ARCH: arm64
@@ -175,7 +183,9 @@ jobs:
           "$CC" \
             --target=aarch64-linux-android \
             -mcpu=cortex-a73.cortex-a53 \
-            -E -x c /dev/null \
+            -E \
+            -x c \
+            /dev/null \
             -o /dev/null
 
           echo "Clang CPU target: OK"
@@ -315,6 +325,8 @@ jobs:
 
       - name: Prepare MagiskBoot
         run: |
+          set -e
+
           MAGISKBOOT="$(find magisk-source -type f -name magiskboot -executable | head -n 1)"
 
           test -n "$MAGISKBOOT"
@@ -326,6 +338,8 @@ jobs:
 
       - name: Unpack original boot
         run: |
+          set -e
+
           rm -rf unpack
           mkdir -p unpack
 
@@ -343,6 +357,8 @@ jobs:
       - name: Replace kernel and preserve original DTB
         working-directory: kernel
         run: |
+          set -e
+
           IMG="out/arch/arm64/boot/Image.gz-dtb"
 
           test -f "$IMG"
@@ -381,6 +397,8 @@ jobs:
 
       - name: Repack boot image
         run: |
+          set -e
+
           ./magiskboot repack boot-original.img new-boot.img
 
           test -f new-boot.img
@@ -394,6 +412,8 @@ jobs:
 
       - name: Verify final boot image
         run: |
+          set -e
+
           rm -rf verify-boot
           mkdir verify-boot
 
