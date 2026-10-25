@@ -183,40 +183,55 @@ jobs:
         run: |
           set -e
 
-          echo "===== CHECK sched_boost ====="
-
-          echo "--- include/linux/sched.h ---"
-          grep -n -B5 -A10 "sched_boost" include/linux/sched.h || true
-
-          echo "--- include/linux/sched/sched.h ---"
-          grep -n -B5 -A10 "sched_boost" include/linux/sched/sched.h || true
-
-          echo "===== APPLY PATCH ====="
-
           python3 - <<'PY'
           from pathlib import Path
 
           p = Path("include/linux/sched.h")
           s = p.read_text()
 
-          old = "extern bool sched_boost(void);"
-          new = "static inline bool sched_boost(void);"
+          old = """#ifdef VENDOR_EDIT
 
-          count = s.count(old)
+          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
+          extern bool sched_boost(void);"""
 
-          if count != 1:
-              raise SystemExit(
-                  "ERROR: expected exactly 1 sched_boost extern declaration, "
-                  f"found {count}"
-              )
+          new = """#ifdef VENDOR_EDIT
 
-          p.write_text(s.replace(old, new, 1))
+          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
+          #ifdef CONFIG_MTK_SCHED_BOOST
+          extern bool sched_boost(void);
+          #endif"""
 
-          print("OK: sched_boost declaration patched")
+          if old not in s:
+              raise SystemExit("ERROR: first sched_boost declaration block tidak ditemukan")
+
+          s = s.replace(old, new, 1)
+
+          old = """#ifdef VENDOR_EDIT
+          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
+          extern bool sched_boost(void);
+          extern int sched_set_updown_migrate(unsigned int up_migrate,unsigned int down_migrate);"""
+
+          new = """#ifdef VENDOR_EDIT
+          //cuixiaogang@swdp.shanghai, 2018/3/18, export some symbol
+          #ifdef CONFIG_MTK_SCHED_BOOST
+          extern bool sched_boost(void);
+          #endif
+          extern int sched_set_updown_migrate(unsigned int up_migrate,unsigned int down_migrate);"""
+
+          if old not in s:
+              raise SystemExit("ERROR: second sched_boost declaration block tidak ditemukan")
+
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+
+          print("OK: sched_boost declarations guarded by CONFIG_MTK_SCHED_BOOST")
           PY
 
-          echo "===== VERIFY PATCH ====="
-          grep -n -B5 -A10 "sched_boost" include/linux/sched.h
+          echo "===== VERIFY sched_boost ====="
+          grep -n -B5 -A12 "sched_boost" include/linux/sched.h
+          grep -n -B5 -A12 "sched_boost" include/linux/sched/sched.h
+
       # ============================================================
       # PATCH CPU TARGET
       # ============================================================
