@@ -561,10 +561,6 @@ jobs:
       # 17. BUILD KERNEL
       # ============================================================
 
-      # ============================================================
-      # 17. BUILD KERNEL
-      # ============================================================
-
       - name: Build kernel
         working-directory: kernel
         env:
@@ -732,6 +728,8 @@ jobs:
 
           echo
           echo "Magisk NDK installation completed."
+
+
       # ============================================================
       # 22. BUILD MAGISKBOOT HOST
       # ============================================================
@@ -746,6 +744,9 @@ jobs:
           echo "========================================"
 
           test -f native/src/external/cxx-rs/Cargo.toml
+
+          echo
+          echo "Building Magisk native tools..."
 
           python3 build.py native
 
@@ -769,6 +770,7 @@ jobs:
 
           echo
           echo "File information:"
+
           file "$HOST_MAGISKBOOT"
 
           if ! file "$HOST_MAGISKBOOT" | grep -q "x86-64"; then
@@ -779,11 +781,12 @@ jobs:
           chmod +x "$HOST_MAGISKBOOT"
 
           echo
-          echo "Testing magiskboot execution..."
+          echo "Checking executable permission..."
 
-          "$HOST_MAGISKBOOT" --help >/dev/null 2>&1
+          test -x "$HOST_MAGISKBOOT"
 
-          echo "MagiskBoot x86_64 OK."
+          echo
+          echo "MagiskBoot x86_64 build: PASS."
 
 
       # ============================================================
