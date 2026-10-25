@@ -47,25 +47,37 @@ jobs:
       # INSTALL CLANG
       # ============================================================
 
-      - name: Install Clang r437112
+- name: Install Clang r437112
         run: |
           set -e
 
-          git clone --depth=1 \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
-            clang-repo
+          echo "===== DOWNLOAD CLANG r437112 ====="
 
           mkdir -p clang
 
-          cp -r clang-repo/clang-r437112/* clang/ || true
+          curl -L --fail --retry 3 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r437112.tar.gz" \
+            -o clang-r437112.tar.gz
+
+          echo "===== EXTRACT CLANG ====="
+
+          tar -xzf clang-r437112.tar.gz -C clang
+
+          rm -f clang-r437112.tar.gz
+
+          echo "===== VERIFY CLANG ====="
 
           if [ ! -x clang/bin/clang ]; then
-            echo "ERROR: clang-r437112 not found"
-            find clang-repo -maxdepth 3 -type f -name clang | head -20
+            echo "ERROR: clang/bin/clang tidak ditemukan"
+            find clang -maxdepth 3 -type f -name clang -print
             exit 1
           fi
 
+          chmod +x clang/bin/clang
+
           ./clang/bin/clang --version
+
+          echo "===== CLANG r437112 READY ====="
 
       # ============================================================
       # GCC 4.9 AARCH64
