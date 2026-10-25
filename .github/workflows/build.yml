@@ -111,7 +111,11 @@ jobs:
             -e CONFIG_KPROBE_EVENTS \
             -e CONFIG_KSU
 
-          make O=out \
+          scripts/config --file out/.config \
+            --set-str LITTLE_CPU_MASK "0-3" \
+            --set-str BIG_CPU_MASK "4-7"
+
+          yes "" | make O=out \
             ARCH=arm64 \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
@@ -120,6 +124,11 @@ jobs:
 
           echo "KernelSU configuration:"
           grep -E 'CONFIG_(KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
+
+          echo "CPU masks:"
+          grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK)' out/.config || true
+
+          test -f out/include/config/auto.conf
 
       - name: Build kernel
         working-directory: kernel
