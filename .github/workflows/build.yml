@@ -17,6 +17,8 @@ jobs:
       # ============================================================
       - name: Install dependencies
         run: |
+          set -eux
+
           sudo apt-get update
 
           sudo apt-get install -y \
@@ -48,7 +50,7 @@ jobs:
 
 
       # ============================================================
-      # 2. CHECKOUT REPOSITORY
+      # 2. CHECKOUT WORKFLOW REPOSITORY
       # ============================================================
       - name: Checkout workflow repository
         uses: actions/checkout@v4
@@ -59,7 +61,10 @@ jobs:
       # ============================================================
       - name: Clone kernel source
         run: |
-          git clone --depth=1 \
+          set -eux
+
+          git clone \
+            --depth=1 \
             -b Q \
             https://github.com/Dark-Matter7232/CosmicFresh-RMX1821.git \
             kernel
@@ -76,17 +81,22 @@ jobs:
       # ============================================================
       - name: Clone toolchains
         run: |
+          set -eux
+
           mkdir -p toolchains
 
-          git clone --depth=1 \
+          git clone \
+            --depth=1 \
             https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r437112.git \
             toolchains/clang
 
-          git clone --depth=1 \
+          git clone \
+            --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
             toolchains/gcc64
 
-          git clone --depth=1 \
+          git clone \
+            --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
             toolchains/gcc32
 
@@ -100,10 +110,12 @@ jobs:
 
 
       # ============================================================
-      # 5. INSTALL KERNELSU v0.9.5
+      # 5. INTEGRATE KERNELSU v0.9.5
       # ============================================================
       - name: Integrate KernelSU v0.9.5
         run: |
+          set -eux
+
           cd kernel
 
           curl -LSs \
@@ -138,7 +150,6 @@ jobs:
           echo "===== ORIGINAL DRVGEN ====="
 
           ls -lah tools/dct/DrvGen.py
-
           file tools/dct/DrvGen.py
 
           echo "===== SHEBANG ====="
@@ -154,7 +165,7 @@ jobs:
           python3 --version
           command -v python3
 
-          echo "===== TEST ORIGINAL DRVGEN WITH PYTHON3 ====="
+          echo "===== TEST DRVGEN WITH PYTHON3 ====="
 
           python3 tools/dct/DrvGen.py || true
 
@@ -172,12 +183,13 @@ EOF
           echo "===== NEW DRVGEN ====="
 
           cat tools/dct/DrvGen.py
-
           file tools/dct/DrvGen.py
 
           echo "===== TEST LAUNCHER ====="
 
           tools/dct/DrvGen.py || true
+
+          echo "===== DRVGEN READY ====="
 
 
       # ============================================================
@@ -229,7 +241,7 @@ EOF
 
           make O=out olddefconfig
 
-          echo "===== CHECK CONFIG ====="
+          echo "===== KERNELSU CONFIG ====="
 
           grep -E \
             '^(CONFIG_KSU|CONFIG_KPROBES|CONFIG_KPROBE_EVENTS)=' \
@@ -271,7 +283,7 @@ EOF
           echo "CLANG_TRIPLE=$CLANG_TRIPLE"
           echo "CC=$CC"
 
-          echo "===== BUILD ====="
+          echo "===== BUILD KERNEL ====="
 
           make -j"$(nproc)" \
             O=out \
@@ -304,15 +316,15 @@ EOF
       # ============================================================
       - name: Download original boot.img
         run: |
+          set -eux
+
           mkdir -p original
 
           wget -O original/boot.img \
-            https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img
+            "https://github.com/mrdartc-gtw/RMX1821-KernelSU./releases/download/boot-original/boot.img"
 
           ls -lah original/boot.img
-
           file original/boot.img
-
           sha256sum original/boot.img
 
 
@@ -321,6 +333,8 @@ EOF
       # ============================================================
       - name: Build magiskboot
         run: |
+          set -eux
+
           git clone \
             --depth=1 \
             --recurse-submodules \
@@ -338,11 +352,16 @@ EOF
 
           echo "===== SEARCH MAGISKBOOT ====="
 
-          find . -type f -name magiskboot -exec file {} \;
+          find . \
+            -type f \
+            -name magiskboot \
+            -exec file {} \;
 
           mkdir -p "$GITHUB_WORKSPACE/magiskboot-bin"
 
-          find . -type f -name magiskboot \
+          find . \
+            -type f \
+            -name magiskboot \
             -exec sh -c '
               if file "$1" | grep -q "ELF 64-bit.*x86-64"; then
                 cp "$1" "$GITHUB_WORKSPACE/magiskboot-bin/magiskboot"
@@ -352,9 +371,11 @@ EOF
 
           test -f "$GITHUB_WORKSPACE/magiskboot-bin/magiskboot"
 
-          chmod +x "$GITHUB_WORKSPACE/magiskboot-bin/magiskboot"
+          chmod +x \
+            "$GITHUB_WORKSPACE/magiskboot-bin/magiskboot"
 
-          file "$GITHUB_WORKSPACE/magiskboot-bin/magiskboot"
+          file \
+            "$GITHUB_WORKSPACE/magiskboot-bin/magiskboot"
 
 
       # ============================================================
@@ -369,7 +390,8 @@ EOF
           cd unpack
 
           "$GITHUB_WORKSPACE/magiskboot-bin/magiskboot" \
-            unpack "$GITHUB_WORKSPACE/original/boot.img"
+            unpack \
+            "$GITHUB_WORKSPACE/original/boot.img"
 
           echo "===== UNPACKED FILES ====="
 
@@ -378,7 +400,8 @@ EOF
           echo "===== BOOT INFO ====="
 
           "$GITHUB_WORKSPACE/magiskboot-bin/magiskboot" \
-            unpack "$GITHUB_WORKSPACE/original/boot.img" \
+            unpack \
+            "$GITHUB_WORKSPACE/original/boot.img" \
             2>&1 | tee "$GITHUB_WORKSPACE/boot-info.txt"
 
 
@@ -391,19 +414,27 @@ EOF
 
           mkdir -p repack
 
-          echo "===== ORIGINAL BOOT KERNEL ====="
+          echo "===== ORIGINAL KERNEL ====="
 
           ls -lah unpack/kernel
           file unpack/kernel
 
-          echo "===== NEW KERNEL ====="
-
-          ls -lah kernel/out/arch/arm64/boot/Image.gz
-          file kernel/out/arch/arm64/boot/Image.gz
-
-          echo "===== PRESERVE ORIGINAL DTB ====="
+          echo "===== ORIGINAL DTB ====="
 
           test -f unpack/kernel_dtb
+
+          ls -lah unpack/kernel_dtb
+          file unpack/kernel_dtb
+
+          echo "===== NEW KERNEL ====="
+
+          ls -lah \
+            kernel/out/arch/arm64/boot/Image.gz
+
+          file \
+            kernel/out/arch/arm64/boot/Image.gz
+
+          echo "===== PRESERVE ORIGINAL DTB ====="
 
           cp \
             unpack/kernel_dtb \
@@ -430,7 +461,7 @@ EOF
         run: |
           set -eux
 
-          echo "===== CREATE NEW KERNEL ====="
+          echo "===== REPLACE KERNEL ====="
 
           cp \
             repack/kernel.gz \
@@ -471,7 +502,11 @@ EOF
 
           ls -lah
 
-          find . -maxdepth 1 -type f -name 'new-boot.img' -exec file {} \;
+          find . \
+            -maxdepth 1 \
+            -type f \
+            -name "new-boot.img" \
+            -exec file {} \;
 
           test -f new-boot.img
 
@@ -481,9 +516,11 @@ EOF
 
           echo "===== FINAL BOOT ====="
 
-          ls -lah "$GITHUB_WORKSPACE/RMX1821-KernelSU-v0.9.5-test.img"
+          ls -lah \
+            "$GITHUB_WORKSPACE/RMX1821-KernelSU-v0.9.5-test.img"
 
-          file "$GITHUB_WORKSPACE/RMX1821-KernelSU-v0.9.5-test.img"
+          file \
+            "$GITHUB_WORKSPACE/RMX1821-KernelSU-v0.9.5-test.img"
 
           sha256sum \
             "$GITHUB_WORKSPACE/RMX1821-KernelSU-v0.9.5-test.img"
@@ -525,16 +562,18 @@ EOF
           echo "===== SEARCH KERNELSU ====="
 
           strings kernel | grep -i \
-            -E 'kernelsu|ksud|/data/adb/ksud' \
+            -E "kernelsu|ksud|/data/adb/ksud" \
             | head -30 \
             || true
 
 
       # ============================================================
-      # 16. COPY CONFIG
+      # 16. PREPARE ARTIFACTS
       # ============================================================
       - name: Prepare artifacts
         run: |
+          set -eux
+
           cp \
             kernel/out/.config \
             kernel.config
