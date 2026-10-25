@@ -124,13 +124,7 @@ jobs:
           CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
-          echo "Workspace:"
-          echo "$GITHUB_WORKSPACE"
-
           echo "Checking GCC:"
-          ls -lh "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc"
-          ls -lh "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
-
           "$CROSS_COMPILE"gcc --version | head -n 1
 
           make O=out \
@@ -138,6 +132,12 @@ jobs:
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             oppo6771_defconfig
+
+          echo "Disabling unsupported stack protector..."
+
+          scripts/config --file out/.config \
+            -d CONFIG_CC_STACKPROTECTOR_STRONG \
+            -d CONFIG_CC_STACKPROTECTOR_REGULAR
 
           scripts/config --file out/.config \
             -e CONFIG_KPROBES \
@@ -148,7 +148,7 @@ jobs:
             --set-val BIG_CPU_MASK 240
 
           echo "Configuration before olddefconfig:"
-          grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
+          grep -E 'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
 
           make O=out \
             ARCH=arm64 \
@@ -157,7 +157,7 @@ jobs:
             olddefconfig
 
           echo "Final configuration:"
-          grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
+          grep -E 'CONFIG_(CC_STACKPROTECTOR|LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
 
           echo "Required KernelSU configuration:"
           grep -E '^CONFIG_(KSU|KPROBES)=' out/.config
