@@ -62,6 +62,12 @@ jobs:
           test -x gcc64/bin/aarch64-linux-android-gcc
           test -x gcc32/bin/arm-linux-androideabi-gcc
 
+          echo "GCC 64-bit:"
+          gcc64/bin/aarch64-linux-android-gcc --version | head -n 1
+
+          echo "GCC 32-bit:"
+          gcc32/bin/arm-linux-androideabi-gcc --version | head -n 1
+
       - name: Integrate KernelSU v0.9.5
         working-directory: kernel
         run: |
@@ -97,26 +103,20 @@ jobs:
           ARCH: arm64
           CROSS_COMPILE: ../gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ../gcc32/bin/arm-linux-androideabi-
-          CLANG_TRIPLE: aarch64-linux-gnu-
         run: |
           make O=out \
             ARCH=arm64 \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            CLANG_TRIPLE="$CLANG_TRIPLE" \
             oppo6771_defconfig
 
-              scripts/config --file out/.config \
-              -e CONFIG_KPROBES \
-              -e CONFIG_KSU
+          scripts/config --file out/.config \
+            -e CONFIG_KPROBES \
+            -e CONFIG_KSU
 
-            scripts/config --file out/.config \
-              -d CONFIG_CC_STACKPROTECTOR_STRONG \
-              -e CONFIG_CC_STACKPROTECTOR_REGULAR
-
-            scripts/config --file out/.config \
-              --set-val LITTLE_CPU_MASK 15 \
-              --set-val BIG_CPU_MASK 240
+          scripts/config --file out/.config \
+            --set-val LITTLE_CPU_MASK 15 \
+            --set-val BIG_CPU_MASK 240
 
           echo "Configuration before olddefconfig:"
           grep -E 'CONFIG_(LITTLE_CPU_MASK|BIG_CPU_MASK|KSU|KPROBES|KPROBE_EVENTS)=' out/.config || true
@@ -125,7 +125,6 @@ jobs:
             ARCH=arm64 \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            CLANG_TRIPLE="$CLANG_TRIPLE" \
             olddefconfig
 
           echo "Final configuration:"
@@ -134,28 +133,28 @@ jobs:
           echo "Required KernelSU configuration:"
           grep -E '^CONFIG_(KSU|KPROBES)=' out/.config
 
-            echo "Kernel configuration completed successfully."
+          echo "Kernel configuration completed successfully."
+
       - name: Build kernel
         working-directory: kernel
         env:
           ARCH: arm64
           CROSS_COMPILE: ../gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ../gcc32/bin/arm-linux-androideabi-
-          CLANG_TRIPLE: aarch64-linux-gnu-
         run: |
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
-            CC="$GITHUB_WORKSPACE/clang/bin/clang" \
-            LLVM=1 \
             CROSS_COMPILE="$CROSS_COMPILE" \
             CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            CLANG_TRIPLE="$CLANG_TRIPLE" \
             Image.gz-dtb
 
           test -f out/arch/arm64/boot/Image.gz-dtb
 
+          echo "Kernel build successful:"
           ls -lh out/arch/arm64/boot/Image.gz-dtb
+
+          file out/arch/arm64/boot/Image.gz-dtb
 
       - name: Download original boot image
         run: |
@@ -164,6 +163,7 @@ jobs:
 
           test "$(stat -c%s boot-original.img)" -eq 33554432
 
+          echo "Original boot SHA256:"
           sha256sum boot-original.img
 
       - name: Build MagiskBoot
@@ -179,14 +179,24 @@ jobs:
           python3 build.py ndk
           python3 build.py native magiskboot
 
+          echo "Available magiskboot binaries:"
           find . -type f -name magiskboot -exec file {} \;
+
+      - name: Prepare MagiskBoot
+        run: |
+          MAGISKBOOT="$(find magisk-source -type f -name magiskboot -executable | head -n 1)"
+
+          test -n "$MAGISKBOOT"
+
+          cp "$MAGISKBOOT" magiskboot
+          chmod +x magiskboot
+
+          file magiskboot
 
       - name: Unpack original boot
         run: |
+          rm -rf unpack
           mkdir -p unpack
-
-          cp magisk-source/native/src/boot/magiskboot magiskboot
-          chmod +x magiskboot
 
           ./magiskboot unpack boot-original.img
 
@@ -196,12 +206,16 @@ jobs:
             mv kernel_dtb unpack/kernel_dtb
           fi
 
+          echo "Original boot components:"
           ls -lh unpack/
 
       - name: Replace kernel and preserve original DTB
         working-directory: kernel
         run: |
           IMG="out/arch/arm64/boot/Image.gz-dtb"
+
+          test -f "$IMG"
+          test -f ../unpack/kernel_dtb
 
           DTB_SIZE="$(stat -c%s ../unpack/kernel_dtb)"
           IMG_SIZE="$(stat -c%s "$IMG")"
@@ -221,14 +235,19 @@ jobs:
             count="$KERNEL_GZ_SIZE" \
             status=none
 
+          echo "Testing kernel gzip:"
           gzip -t ../new-kernel.gz
 
+          echo "Extracting kernel:"
           gzip -dc ../new-kernel.gz > ../unpack/kernel
 
           test -s ../unpack/kernel
           test -s ../unpack/kernel_dtb
 
+          echo "New kernel:"
           file ../unpack/kernel
+
+          echo "Original DTB:"
           file ../unpack/kernel_dtb
 
       - name: Repack boot image
@@ -239,6 +258,21 @@ jobs:
           test "$(stat -c%s new-boot.img)" -eq 33554432
 
           echo "Final boot image:"
+          ls -lh new-boot.img
+
+          echo "Final boot SHA256:"
+          sha256sum new-boot.img
+
+      - name: Verify final boot image
+        run: |
+          echo "Checking final boot image..."
+
+          ./magiskboot unpack new-boot.img
+
+          echo "Final boot components:"
+          ls -lh kernel kernel_dtb ramdisk.cpio 2>/dev/null || true
+
+          echo "Final boot SHA256:"
           sha256sum new-boot.img
 
       - name: Upload boot artifact
