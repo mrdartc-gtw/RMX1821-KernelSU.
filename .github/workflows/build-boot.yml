@@ -821,9 +821,27 @@ jobs:
           echo "MagiskBoot x86_64 build: PASS."
 
 
+       # ============================================================
+      # 23. PREPARE MAGISKBOOT WORK DIRECTORY
       # ============================================================
-      # 23. UNPACK ORIGINAL BOOT
-      # ============================================================
+
+      - name: Prepare MagiskBoot working directory
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "PREPARE MAGISKBOOT DIRECTORY"
+          echo "========================================"
+
+          rm -rf magiskboot
+          mkdir -p magiskboot
+
+          echo "Working directory:"
+          pwd
+
+          echo
+          echo "MagiskBoot directory:"
+          ls -ld magiskboot
 
       - name: Unpack original boot
         working-directory: magiskboot
