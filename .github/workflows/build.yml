@@ -168,41 +168,53 @@ jobs:
 
           echo "Kernel configuration completed successfully."
 
-      - name: Build kernel
+      - name: Diagnose GCC and CPU flags
         working-directory: kernel
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ github.workspace }}/gcc64/bin/aarch64-linux-android-
           CROSS_COMPILE_ARM32: ${{ github.workspace }}/gcc32/bin/arm-linux-androideabi-
         run: |
-          echo "Checking GCC:"
-          "$CROSS_COMPILE"gcc --version | head -n 1
+          set -x
 
-          echo "GCC 64-bit:"
-          ls -lh "$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android-gcc"
+          echo "===== GCC VERSION ====="
+          "$CROSS_COMPILE"gcc --version | head -n 3
 
-          echo "GCC 32-bit:"
-          ls -lh "$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-gcc"
+          echo "===== TEST GCC A53 ====="
+          "$CROSS_COMPILE"gcc \
+            -mcpu=cortex-a53 \
+            -E -x c /dev/null \
+            -o /dev/null
 
-          echo "Testing CPU target:"
-          "$CROSS_COMPILE"gcc -mcpu=cortex-a73 -E -x c /dev/null -o /dev/null
+          echo "===== SEARCH CPU FLAGS ====="
+          grep -Rni \
+            -E 'cortex-a73\.cortex-a53|cortex-a73' \
+            Makefile arch scripts 2>/dev/null | head -100 || true
 
-          echo "Building kernel..."
+          echo "===== SEARCH ALL MCpu/MTUNE ====="
+          grep -Rni \
+            -E 'mcpu=|mtune=' \
+            Makefile arch scripts 2>/dev/null | head -150 || true
 
-          make -j"$(nproc)" \
-            O=out \
-            ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            KCFLAGS="-mcpu=cortex-a73" \
-            Image.gz-dtb
+          echo "===== DRVGEN FILE ====="
+          ls -lah tools/dct/DrvGen.py*
 
-          test -f out/arch/arm64/boot/Image.gz-dtb
+          echo "===== DRVGEN PATH REFERENCES ====="
+          grep -n -E \
+            'DWS|dws|drivers/misc|/drivers|arch/arm64' \
+            tools/dct/DrvGen.py.real 2>/dev/null | head -100 || true
 
-          echo "Kernel build successful:"
-          ls -lh out/arch/arm64/boot/Image.gz-dtb
+          echo "===== DWS FILE ====="
+          ls -lah \
+            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
 
-          file out/arch/arm64/boot/Image.gz-dtb
+          echo "===== DWS ABSOLUTE PATH ====="
+          realpath \
+            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+
+          echo "===== DRVGEN SCRIPT HEAD ====="
+          sed -n '1,220p' tools/dct/DrvGen.py.real
+
       - name: Download original boot image
         run: |
           wget -O boot-original.img \
