@@ -691,7 +691,24 @@ jobs:
 
 
       # ============================================================
-      # 21. BUILD MAGISKBOOT HOST
+      # 21. INSTALL MAGISK NDK
+      # ============================================================
+
+      - name: Install Magisk NDK
+        working-directory: Magisk
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "INSTALL MAGISK NDK"
+          echo "========================================"
+
+          python3 build.py ndk
+
+          echo
+          echo "Magisk NDK installation completed."
+      # ============================================================
+      # 22. BUILD MAGISKBOOT HOST
       # ============================================================
 
       - name: Build MagiskBoot
@@ -740,30 +757,6 @@ jobs:
           "$HOST_MAGISKBOOT" --help >/dev/null 2>&1
 
           echo "MagiskBoot x86_64 OK."
-      # ============================================================
-      # 22. COPY MAGISKBOOT
-      # ============================================================
-
-      - name: Prepare MagiskBoot
-        run: |
-          set -e
-
-          mkdir -p magiskboot
-
-          cp \
-            Magisk/native/out/x86_64/magiskboot \
-            magiskboot/magiskboot
-
-          chmod +x \
-            magiskboot/magiskboot
-
-          file \
-            magiskboot/magiskboot
-
-          ./magiskboot/magiskboot \
-            --help >/dev/null 2>&1
-
-          echo "MagiskBoot ready."
 
 
       # ============================================================
