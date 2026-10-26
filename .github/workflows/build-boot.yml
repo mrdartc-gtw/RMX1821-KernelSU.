@@ -1052,6 +1052,24 @@ jobs:
           echo "DTB:"
           file new-kernel-dtb
 
+      - name: Compare original and build DTB
+        working-directory: magiskboot
+        run: |
+          set -e
+
+          echo "Original boot DTB:"
+          file kernel_dtb
+
+          echo "New build DTB:"
+          file new-kernel-dtb
+
+          echo
+          if cmp -s kernel_dtb new-kernel-dtb; then
+            echo "DTB identik."
+          else
+            echo "PERINGATAN: DTB hasil build berbeda dari DTB asli."
+            echo "Workflow saat ini tetap menggunakan DTB asli."
+          fi
 
 
       # ============================================================
@@ -1116,6 +1134,7 @@ jobs:
           )
           PY
 
+      # 
       # ============================================================
       # 28. VERIFY ORIGINAL / NEW KERNEL
       # ============================================================
@@ -1125,32 +1144,26 @@ jobs:
         run: |
           set -e
 
-          echo "Checking original kernel compression..."
-          gzip -t kernel
+          echo "===== ORIGINAL KERNEL ====="
+          file kernel
 
-          echo "Checking new kernel compression..."
-          gzip -t new-kernel.gz
-
-          gzip -dc kernel > original-kernel-decompressed
-          gzip -dc new-kernel.gz > new-kernel-verify
+          echo
+          echo "===== NEW KERNEL ====="
+          file new-kernel
 
           python3 - <<'PY'
           from pathlib import Path
 
-          for name in [
-              "original-kernel-decompressed",
-              "new-kernel-verify",
-          ]:
+          for name in ["kernel", "new-kernel"]:
               data = Path(name).read_bytes()
-
-              print(name)
-              print("Size:", len(data))
-              print("Magic:", data[0x38:0x3c].hex())
 
               if len(data) < 0x3c:
                   raise SystemExit(f"ERROR: {name} terlalu kecil.")
 
-              if data[0x38:0x3c] != b'ARM\x64':
+              magic = data[0x38:0x3c]
+              print(f"{name}: size={len(data)}, magic={magic.hex()}")
+
+              if magic != b'ARM\x64':
                   raise SystemExit(f"ERROR: {name} bukan ARM64 Image.")
 
           print("Kernel format verification: PASS")
@@ -1179,7 +1192,7 @@ jobs:
 
           echo "Original components backed up."
 
-      # ============================================================
+# ============================================================
       # 30. REPLACE ONLY KERNEL
       # ============================================================
 
@@ -1188,15 +1201,26 @@ jobs:
         run: |
           set -e
 
-          echo "Replacing compressed kernel..."
-          gzip -t new-kernel.gz
-
-          cp new-kernel.gz kernel
+          echo "Replacing kernel with raw ARM64 Image..."
+          test -s new-kernel
+          cp new-kernel kernel
 
           echo
-          echo "New kernel:"
+          echo "New kernel format:"
           file kernel
-          ls -lh kernel
+
+          echo
+          echo "Checking ARM64 magic..."
+          python3 - <<'PY'
+          from pathlib import Path
+
+          data = Path("kernel").read_bytes()
+
+          if len(data) < 0x3c or data[0x38:0x3c] != b'ARM\x64':
+              raise SystemExit("ERROR: kernel bukan ARM64 Image.")
+
+          print("ARM64 Image: PASS")
+          PY
 
           echo
           echo "Checking original DTB..."
@@ -1208,6 +1232,31 @@ jobs:
           cmp ramdisk.cpio ramdisk.cpio.original
           echo "Ramdisk unchanged."
 
+      - name: Verify replacement kernel
+        working-directory: magiskboot
+        run: |
+          set -e
+
+          echo "Original kernel:"
+          file kernel.original
+
+          echo "Replacement kernel:"
+          file kernel
+
+          echo "Original and replacement sizes:"
+          stat -c "%n: %s bytes" kernel.original kernel
+
+          echo "Replacement kernel magic:"
+          xxd -s 56 -l 4 kernel
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          data = Path("kernel").read_bytes()
+          assert len(data) >= 60, "Kernel terlalu kecil"
+          assert data[56:60] == b'ARM\x64', "Magic ARM64 tidak valid"
+          print("Replacement kernel check: PASS")
+          PY
       # ============================================================
       # 31. REPACK BOOT
       # ============================================================
@@ -1310,7 +1359,7 @@ jobs:
           echo "Ramdisk verification: PASS"
 
 
-      # ============================================================
+# ============================================================
       # 35. VERIFY FINAL KERNEL
       # ============================================================
 
@@ -1319,24 +1368,21 @@ jobs:
         run: |
           set -e
 
-          echo "Checking final kernel compression..."
+          echo "Checking final kernel..."
           file kernel
-          gzip -t kernel
-
-          gzip -dc kernel > kernel-decompressed
 
           python3 - <<'PY'
           from pathlib import Path
 
-          kernel = Path("kernel-decompressed").read_bytes()
+          data = Path("kernel").read_bytes()
 
-          if len(kernel) < 0x3c:
+          if len(data) < 0x3c:
               raise SystemExit("ERROR: final kernel terlalu kecil.")
 
-          magic = kernel[0x38:0x3c]
+          magic = data[0x38:0x3c]
 
           print("ARM64 Image magic:", magic.hex())
-          print("Decompressed kernel size:", len(kernel))
+          print("Kernel size:", len(data))
 
           if magic != b'ARM\x64':
               raise SystemExit("ERROR: final kernel bukan ARM64 Image.")
