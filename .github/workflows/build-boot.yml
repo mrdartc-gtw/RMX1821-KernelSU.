@@ -824,10 +824,9 @@ jobs:
           echo "MagiskBoot x86_64 build: PASS."
 
 
-       # ============================================================
+      # ============================================================
       # 23. PREPARE MAGISKBOOT WORK DIRECTORY
       # ============================================================
-
       - name: Prepare MagiskBoot working directory
         run: |
           set -e
@@ -957,6 +956,7 @@ jobs:
           ls -lh Image.gz-dtb
 
 
+
       # ============================================================
       # 26. SPLIT GZIP KERNEL + DTB
       # ============================================================
@@ -980,113 +980,65 @@ jobs:
           print("Total Image.gz-dtb size:", len(image))
 
           if len(image) < 32:
-              raise SystemExit(
-                  "ERROR: Image.gz-dtb terlalu kecil."
-              )
+              raise SystemExit("ERROR: Image.gz-dtb terlalu kecil.")
 
           if image[:2] != b'\x1f\x8b':
-              raise SystemExit(
-                  "ERROR: Image.gz-dtb tidak diawali gzip."
-              )
+              raise SystemExit("ERROR: Image.gz-dtb bukan gzip.")
 
-          print("Gzip magic: PASS")
-
-          d = zlib.decompressobj(
-              16 + zlib.MAX_WBITS
-          )
+          d = zlib.decompressobj(16 + zlib.MAX_WBITS)
 
           try:
               kernel_decompressed = d.decompress(image)
           except zlib.error as e:
-              raise SystemExit(
-                  "ERROR: gzip kernel tidak valid: " + str(e)
-              )
+              raise SystemExit(f"ERROR: gzip tidak valid: {e}")
 
           if not d.eof:
-              raise SystemExit(
-                  "ERROR: gzip kernel tidak menemukan EOF."
-              )
+              raise SystemExit("ERROR: gzip tidak menemukan EOF.")
 
           kernel_gz_size = len(image) - len(d.unused_data)
-
           kernel_gz = image[:kernel_gz_size]
           dtb = d.unused_data
 
-          print()
           print("Kernel decompressed size:", len(kernel_decompressed))
-          print("Kernel gzip size        :", len(kernel_gz))
-          print("DTB size                :", len(dtb))
+          print("Kernel gzip size:", len(kernel_gz))
+          print("DTB size before trimming:", len(dtb))
 
           if len(kernel_decompressed) < 0x3c:
-              raise SystemExit(
-                  "ERROR: kernel hasil decompress terlalu kecil."
-              )
+              raise SystemExit("ERROR: kernel terlalu kecil.")
 
-          kernel_magic = kernel_decompressed[0x38:0x3c]
-
-          print(
-              "Kernel ARM64 magic      :",
-              kernel_magic.hex()
-          )
-
-          if kernel_magic != b'ARM\x64':
-              raise SystemExit(
-                  "ERROR: gzip stream bukan ARM64 Linux Image."
-              )
+          if kernel_decompressed[0x38:0x3c] != b'ARM\x64':
+              raise SystemExit("ERROR: bukan ARM64 Linux Image.")
 
           if len(dtb) < 8:
-              raise SystemExit(
-                  "ERROR: DTB terlalu kecil."
-              )
+              raise SystemExit("ERROR: DTB terlalu kecil.")
 
           if dtb[:4] != b'\xd0\x0d\xfe\xed':
               raise SystemExit(
-                  "ERROR: data setelah gzip bukan DTB. "
-                  "Magic=" + dtb[:4].hex()
+                  f"ERROR: DTB magic tidak valid: {dtb[:4].hex()}"
               )
 
-          totalsize = struct.unpack(
-              ">I",
-              dtb[4:8]
-          )[0]
+          totalsize = struct.unpack(">I", dtb[4:8])[0]
 
-          print(
-              "DTB magic               :",
-              dtb[:4].hex()
-          )
+          print("DTB header totalsize:", totalsize)
+          print("DTB actual size:", len(dtb))
 
-          print(
-              "DTB header totalsize    :",
-              totalsize
-          )
-
-          print(
-              "DTB actual size         :",
-              len(dtb)
-          )
-
-          if totalsize != len(dtb):
+          if totalsize < 8 or totalsize > len(dtb):
               raise SystemExit(
-                  "ERROR: ukuran DTB tidak cocok. "
-                  f"header={totalsize}, "
-                  f"actual={len(dtb)}"
+                  f"ERROR: ukuran DTB tidak valid: "
+                  f"header={totalsize}, actual={len(dtb)}"
               )
 
-          Path(
-              "new-kernel.gz"
-          ).write_bytes(kernel_gz)
+          dtb = dtb[:totalsize]
 
-          Path(
-              "new-kernel-dtb"
-          ).write_bytes(dtb)
+          Path("new-kernel.gz").write_bytes(kernel_gz)
+          Path("new-kernel-dtb").write_bytes(dtb)
 
-          print()
+          print("DTB size after trimming:", len(dtb))
           print("Kernel gzip + DTB extraction: PASS")
           PY
 
           echo
           echo "Testing gzip integrity..."
-
           gzip -t new-kernel.gz
 
           test -s new-kernel.gz
@@ -1099,6 +1051,7 @@ jobs:
           echo
           echo "DTB:"
           file new-kernel-dtb
+
 
 
       # ============================================================
@@ -1172,61 +1125,35 @@ jobs:
         run: |
           set -e
 
-          echo "========================================"
-          echo "VERIFY KERNEL FORMATS"
-          echo "========================================"
+          echo "Checking original kernel compression..."
+          gzip -t kernel
 
-          echo
-          echo "===== ORIGINAL ====="
-          file kernel
+          echo "Checking new kernel compression..."
+          gzip -t new-kernel.gz
 
-          echo
-          echo "===== NEW ====="
-          file new-kernel
-
-          echo
-          echo "===== ORIGINAL HEADER ====="
-          xxd -l 64 kernel
-
-          echo
-          echo "===== NEW HEADER ====="
-          xxd -l 64 new-kernel
+          gzip -dc kernel > original-kernel-decompressed
+          gzip -dc new-kernel.gz > new-kernel-verify
 
           python3 - <<'PY'
           from pathlib import Path
 
-          original = Path("kernel").read_bytes()
-          new = Path("new-kernel").read_bytes()
+          for name in [
+              "original-kernel-decompressed",
+              "new-kernel-verify",
+          ]:
+              data = Path(name).read_bytes()
 
-          if len(original) < 0x3c:
-              raise SystemExit(
-                  "ERROR: original kernel terlalu kecil."
-              )
+              print(name)
+              print("Size:", len(data))
+              print("Magic:", data[0x38:0x3c].hex())
 
-          if len(new) < 0x3c:
-              raise SystemExit(
-                  "ERROR: new kernel terlalu kecil."
-              )
+              if len(data) < 0x3c:
+                  raise SystemExit(f"ERROR: {name} terlalu kecil.")
 
-          original_magic = original[0x38:0x3c]
-          new_magic = new[0x38:0x3c]
+              if data[0x38:0x3c] != b'ARM\x64':
+                  raise SystemExit(f"ERROR: {name} bukan ARM64 Image.")
 
-          print("Original magic:", original_magic.hex())
-          print("New magic:", new_magic.hex())
-
-          if original_magic != b'ARM\x64':
-              raise SystemExit(
-                  "ERROR: original bukan ARM64 Image."
-              )
-
-          if new_magic != b'ARM\x64':
-              raise SystemExit(
-                  "ERROR: new bukan ARM64 Image."
-              )
-
-          print("Original kernel: ARM64 Image")
-          print("New kernel: ARM64 Image")
-          print("Kernel format compatible.")
+          print("Kernel format verification: PASS")
           PY
 
       # ============================================================
@@ -1261,34 +1188,25 @@ jobs:
         run: |
           set -e
 
-          echo "========================================"
-          echo "REPLACE KERNEL"
-          echo "========================================"
+          echo "Replacing compressed kernel..."
+          gzip -t new-kernel.gz
 
-          cp \
-            new-kernel \
-            original/kernel
+          cp new-kernel.gz kernel
 
           echo
           echo "New kernel:"
-          file original/kernel
+          file kernel
+          ls -lh kernel
 
           echo
-          echo "Original DTB preserved:"
-          cmp \
-            original/kernel_dtb \
-            original/kernel_dtb.original
-
+          echo "Checking original DTB..."
+          cmp kernel_dtb kernel_dtb.original
           echo "DTB unchanged."
 
           echo
-          echo "Original ramdisk preserved:"
-          cmp \
-            original/ramdisk.cpio \
-            original/ramdisk.cpio.original
-
+          echo "Checking original ramdisk..."
+          cmp ramdisk.cpio ramdisk.cpio.original
           echo "Ramdisk unchanged."
-
 
       # ============================================================
       # 31. REPACK BOOT
@@ -1327,6 +1245,11 @@ jobs:
         run: |
           set -e
 
+          echo "========================================"
+          echo "VERIFY FINAL BOOT IMAGE"
+          echo "========================================"
+
+          rm -rf final-check
           mkdir -p final-check
 
           cp \
@@ -1341,7 +1264,19 @@ jobs:
 
           echo
           echo "Final boot components:"
-          ls -lah original
+          ls -lah
+
+          echo
+          echo "Kernel:"
+          ls -lh kernel
+
+          echo
+          echo "Kernel DTB:"
+          ls -lh kernel_dtb
+
+          echo
+          echo "Ramdisk:"
+          ls -lh ramdisk.cpio
 
 
       # ============================================================
@@ -1354,11 +1289,10 @@ jobs:
           set -e
 
           cmp \
-            original/kernel_dtb \
-            ../magiskboot/original/kernel_dtb.original
+            kernel_dtb \
+            ../magiskboot/kernel_dtb.original
 
           echo "DTB verification: PASS"
-
 
       # ============================================================
       # 34. VERIFY RAMDISK
@@ -1370,8 +1304,8 @@ jobs:
           set -e
 
           cmp \
-            original/ramdisk.cpio \
-            ../magiskboot/original/ramdisk.cpio.original
+            ramdisk.cpio \
+            ../magiskboot/ramdisk.cpio.original
 
           echo "Ramdisk verification: PASS"
 
@@ -1385,41 +1319,30 @@ jobs:
         run: |
           set -e
 
-          echo "Final kernel:"
-          file original/kernel
+          echo "Checking final kernel compression..."
+          file kernel
+          gzip -t kernel
+
+          gzip -dc kernel > kernel-decompressed
 
           python3 - <<'PY'
           from pathlib import Path
 
-          kernel = Path(
-              "original/kernel"
-          ).read_bytes()
+          kernel = Path("kernel-decompressed").read_bytes()
 
           if len(kernel) < 0x3c:
-              raise SystemExit(
-                  "ERROR: final kernel terlalu kecil."
-              )
+              raise SystemExit("ERROR: final kernel terlalu kecil.")
 
-          magic = kernel[
-              0x38:0x3c
-          ]
+          magic = kernel[0x38:0x3c]
 
-          print(
-              "Final kernel magic:",
-              magic.hex()
-          )
+          print("ARM64 Image magic:", magic.hex())
+          print("Decompressed kernel size:", len(kernel))
 
           if magic != b'ARM\x64':
-              raise SystemExit(
-                  "ERROR: final kernel bukan ARM64 Image."
-              )
+              raise SystemExit("ERROR: final kernel bukan ARM64 Image.")
 
-          print(
-              "Final kernel verification: PASS"
-          )
+          print("Final kernel verification: PASS")
           PY
-
-
       # ============================================================
       # 36. FINAL SHA256
       # ============================================================
