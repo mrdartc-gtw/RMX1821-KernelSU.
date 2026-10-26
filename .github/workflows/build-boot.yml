@@ -1239,19 +1239,18 @@ jobs:
           set -e
 
           cp \
-            original/kernel \
-            original/kernel.original
+            kernel \
+            kernel.original
 
           cp \
-            original/kernel_dtb \
-            original/kernel_dtb.original
+            kernel_dtb \
+            kernel_dtb.original
 
           cp \
-            original/ramdisk.cpio \
-            original/ramdisk.cpio.original
+            ramdisk.cpio \
+            ramdisk.cpio.original
 
           echo "Original components backed up."
-
 
       # ============================================================
       # 30. REPLACE ONLY KERNEL
